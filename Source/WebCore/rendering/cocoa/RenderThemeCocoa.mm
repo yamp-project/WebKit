@@ -2170,7 +2170,7 @@ static bool paintTextAreaOrTextField(const RenderObject& box, const PaintInfo& p
 #endif
 
     const auto styleColorOptions = box.styleColorOptions();
-    auto backgroundColor = RenderTheme::singleton().systemColor(CSSValueCanvas, styleColorOptions);
+    auto backgroundColor = style->visitedDependentColor(CSSPropertyBackgroundColor);
 #if PLATFORM(MAC)
     const auto prefersContrast = Theme::singleton().userPrefersContrast();
     auto borderColor = prefersContrast ? highContrastOutlineColor(styleColorOptions) : RenderTheme::singleton().systemColor(CSSValueAppleSystemContainerBorder, styleColorOptions);
@@ -2813,6 +2813,8 @@ bool RenderThemeCocoa::adjustProgressBarStyleForVectorBasedControls(RenderStyle&
     return false;
 }
 
+static constexpr auto cssValueForInactiveBarFill = CSSValueAppleSystemTertiaryLabel;
+
 bool RenderThemeCocoa::paintProgressBarForVectorBasedControls(const RenderObject& renderer, const PaintInfo& paintInfo, const FloatRect& rect)
 {
     if (!formControlRefreshEnabled(renderer))
@@ -2903,8 +2905,14 @@ bool RenderThemeCocoa::paintProgressBarForVectorBasedControls(const RenderObject
         }
     }
 
+    auto isWindowActive = true;
+#if PLATFORM(MAC)
+    isWindowActive = extractControlStyleStatesForRenderer(renderer).contains(ControlStyle::State::WindowActive);
+#endif
+    const auto fillColor = isWindowActive ? controlTintColorWithContrast(renderer.style(), styleColorOptions) : systemColor(cssValueForInactiveBarFill, styleColorOptions);
+
     FloatRect barRect(barInlineStart, barBlockStart, barInlineSize, barBlockSize);
-    context.fillRoundedRect(FloatRoundedRect(isHorizontalWritingMode ? barRect : barRect.transposedRect(), barCornerRadii), controlTintColorWithContrast(renderer.style(), styleColorOptions).colorWithAlphaMultipliedBy(alpha));
+    context.fillRoundedRect(FloatRoundedRect(isHorizontalWritingMode ? barRect : barRect.transposedRect(), barCornerRadii), fillColor.colorWithAlphaMultipliedBy(alpha));
 
     return true;
 }
@@ -3093,7 +3101,7 @@ bool RenderThemeCocoa::paintSliderTrackForVectorBasedControls(const RenderObject
 
 #if PLATFORM(MAC)
     const auto isWindowActive = states.contains(ControlStyle::State::WindowActive);
-    auto fillColor = isWindowActive ? controlTintColorWithContrast(box.style(), styleColorOptions) : systemColor(CSSValueAppleSystemTertiaryLabel, styleColorOptions);
+    auto fillColor = isWindowActive ? controlTintColorWithContrast(box.style(), styleColorOptions) : systemColor(cssValueForInactiveBarFill, styleColorOptions);
 #else
     auto fillColor = controlTintColorWithContrast(box.style(), styleColorOptions);
 #endif

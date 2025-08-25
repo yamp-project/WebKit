@@ -389,20 +389,23 @@ static ALWAYS_INLINE JITReservation initializeJITPageReservation()
         jit_heap_runtime_config.max_segregated_object_size = 0;
 #endif
 
-    auto tryCreatePageReservation = [] (size_t reservationSize) {
+    auto tryCreatePageReservation = [] (size_t reservationSize, uintptr_t hintAddress) {
 #if OS(LINUX)
         // On Linux, if we use uncommitted reservation, mmap operation is recorded with small page size in perf command's output.
         // This makes the following JIT code logging broken and some of JIT code is not recorded correctly.
         // To avoid this problem, we use committed reservation if we need perf JITDump logging.
         if (Options::useJITDump())
-            return PageReservation::tryReserveAndCommitWithGuardPages(reservationSize, OSAllocator::JSJITCodePages, EXECUTABLE_POOL_WRITABLE, true, false);
+            return PageReservation::tryReserveWithGuardPages(reservationSize, OSAllocator::JSJITCodePages, hintAddress, EXECUTABLE_POOL_WRITABLE, true, true, false);
 #endif
         if (Options::useJITCage() && JSC_ALLOW_JIT_CAGE_SPECIFIC_RESERVATION)
-            return PageReservation::tryReserve(reservationSize, OSAllocator::JSJITCodePages, EXECUTABLE_POOL_WRITABLE, true, Options::useJITCage());
-        return PageReservation::tryReserveWithGuardPages(reservationSize, OSAllocator::JSJITCodePages, EXECUTABLE_POOL_WRITABLE, true, false);
+            return PageReservation::tryReserve(reservationSize, OSAllocator::JSJITCodePages, hintAddress, EXECUTABLE_POOL_WRITABLE, true, false, Options::useJITCage());
+        return PageReservation::tryReserveWithGuardPages(reservationSize, OSAllocator::JSJITCodePages, hintAddress, EXECUTABLE_POOL_WRITABLE, true, false, false);
     };
 
-    reservation.pageReservation = tryCreatePageReservation(reservation.size);
+
+    reservation.pageReservation = tryCreatePageReservation(reservation.size, Options::jitMemoryReservationAddress());
+    if (Options::jitMemoryReservationAddress())
+        RELEASE_ASSERT(std::bit_cast<uintptr_t>(reservation.pageReservation.base()) == Options::jitMemoryReservationAddress() && "Failed to accomodate JSC_jitMemoryReservationAddress");
 
     if (Options::verboseExecutablePoolAllocation())
         dataLog(getpid(), ": Got executable pool reservation at ", RawPointer(reservation.pageReservation.base()), "...", RawPointer(reservation.pageReservation.end()), ", while I'm at ", RawPointer(reinterpret_cast<void*>(initializeJITPageReservation)), "\n");
@@ -852,9 +855,9 @@ private:
             auto emitJumpTo = [&] (void* target) {
                 RELEASE_ASSERT(Assembler::canEmitJump(std::bit_cast<void*>(jumpLocation), target));
                 if (useMemcpy)
-                    Assembler::fillNearTailCall<MachineCodeCopyMode::Memcpy>(currentIsland, target);
+                    Assembler::fillNearTailCall<memcpyRepatchFlush>(currentIsland, target);
                 else
-                    Assembler::fillNearTailCall<MachineCodeCopyMode::JITMemcpy>(currentIsland, target);
+                    Assembler::fillNearTailCall<jitMemcpyRepatchFlush>(currentIsland, target);
             };
 
             if (Assembler::canEmitJump(std::bit_cast<void*>(jumpLocation), std::bit_cast<void*>(target))) {
@@ -1427,7 +1430,7 @@ ExecutableMemoryHandle::~ExecutableMemoryHandle()
         // We don't have a performJITMemset so just use a zeroed buffer.
         auto zeros = MallocSpan<uint8_t>::zeroedMalloc(sizeInBytes());
         auto span = zeros.span();
-        performJITMemcpy(start().untaggedPtr(), span.data(), span.size());
+        performJITMemcpy<jitMemcpyRepatch>(start().untaggedPtr(), span.data(), span.size());
     }
     jit_heap_deallocate(key());
 }

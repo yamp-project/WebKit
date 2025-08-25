@@ -3718,6 +3718,19 @@ NSUInteger WebViewImpl::accessibilityUIProcessLocalTokenHash()
     return [m_remoteAccessibilityTokenGeneratedByUIProcess hash];
 }
 
+NSArray<NSNumber *> *WebViewImpl::registeredRemoteAccessibilityPids()
+{
+    NSMutableArray<NSNumber *> *result = [NSMutableArray new];
+    for (pid_t pid : m_registeredRemoteAccessibilityPids)
+        [result addObject:@(pid)];
+    return result;
+}
+
+bool WebViewImpl::hasRemoteAccessibilityChild()
+{
+    return !!remoteAccessibilityChildIfNotSuspended();
+}
+
 void WebViewImpl::updateRemoteAccessibilityRegistration(bool registerProcess)
 {
     // When the tree is connected/disconnected, the remote accessibility registration
@@ -3734,10 +3747,13 @@ void WebViewImpl::updateRemoteAccessibilityRegistration(bool registerProcess)
     if (!pid)
         return;
 
-    if (registerProcess)
+    if (registerProcess) {
         [NSAccessibilityRemoteUIElement registerRemoteUIProcessIdentifier:pid];
-    else
+        m_registeredRemoteAccessibilityPids.add(pid);
+    } else {
         [NSAccessibilityRemoteUIElement unregisterRemoteUIProcessIdentifier:pid];
+        m_registeredRemoteAccessibilityPids.remove(pid);
+    }
 }
 
 void WebViewImpl::accessibilityRegisterUIProcessTokens()
@@ -3993,10 +4009,8 @@ void WebViewImpl::setAcceleratedCompositingRootLayer(CALayer *rootLayer)
     m_rootLayer = rootLayer;
     rootLayer.hidden = NO;
 
-    if (m_thumbnailView) {
-        updateThumbnailViewLayer();
+    if (m_thumbnailView && updateThumbnailViewLayer())
         return;
-    }
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -4059,13 +4073,17 @@ void WebViewImpl::reparentLayerTreeInThumbnailView()
     [m_thumbnailView.get() _setThumbnailLayer: m_rootLayer.get()];
 }
 
-void WebViewImpl::updateThumbnailViewLayer()
+bool WebViewImpl::updateThumbnailViewLayer()
 {
     RetainPtr thumbnailView = m_thumbnailView.get();
     ASSERT(thumbnailView);
 
-    if ([thumbnailView _waitingForSnapshot] && [m_view window])
+    if ([thumbnailView _waitingForSnapshot] && [m_view window]) {
         reparentLayerTreeInThumbnailView();
+        return true;
+    }
+
+    return false;
 }
 
 void WebViewImpl::setInspectorAttachmentView(NSView *newView)

@@ -374,20 +374,24 @@ end
 
 # OSR
 macro ipintPrologueOSR(increment)
-if JIT and not ARMv7
+if JIT
     loadp UnboxedWasmCalleeStackSlot[cfr], ws0
     baddis increment, Wasm::IPIntCallee::m_tierUpCounter + Wasm::IPIntTierUpCounter::m_counter[ws0], .continue
 
     preserveWasmArgumentRegisters()
 
+if not ARMv7
     ipintReloadMemory()
     push memoryBase, boundsCheckingSize
+end
 
     move cfr, a1
     operationCall(macro() cCall2(_ipint_extern_prologue_osr) end)
     move r0, ws0
 
+if not ARMv7
     pop boundsCheckingSize, memoryBase
+end
 
     restoreWasmArgumentRegisters()
 
@@ -406,7 +410,10 @@ if JIT and not ARMv7
 .recover:
     loadp UnboxedWasmCalleeStackSlot[cfr], ws0
 .continue:
-end
+    if ARMv7
+        break # FIXME: ipint support.
+    end # ARMv7
+end # JIT
 end
 
 macro ipintLoopOSR(increment)
@@ -488,7 +495,7 @@ if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
     if X86_64
         initPCRelative(ipint_entry, PL)
     end
-    ipintEntry()
+ipintEntry()
 else
     break
 end
@@ -504,12 +511,16 @@ if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
 
     loadp CodeBlock[cfr], wasmInstance
     # OSR Check
+if ARMv7
+    ipintPrologueOSR(500000) # FIXME: support IPInt.
+    break
+else
     ipintPrologueOSR(5)
-
+end
     move sp, PL
 
     loadp Wasm::IPIntCallee::m_bytecode[ws0], PC
-    loadp Wasm::IPIntCallee::m_metadata[ws0], MC
+    loadp Wasm::IPIntCallee::m_metadata + VectorBufferOffset[ws0], MC
     # Load memory
     ipintReloadMemory()
 
@@ -527,6 +538,125 @@ if WEBASSEMBLY and (ARM64 or ARM64E or X86_64 or ARMv7)
 else
     break
 end
+
+op(ipint_function_prologue_simd_trampoline, macro ()
+    tagReturnAddress sp
+    jmp _ipint_function_prologue_simd
+end)
+
+op(ipint_function_prologue_simd, macro ()
+    if not WEBASSEMBLY or C_LOOP
+        error
+    end
+
+if (WEBASSEMBLY_BBQJIT or WEBASSEMBLY_OMGJIT) and not ARMv7
+    preserveCallerPCAndCFR()
+    saveIPIntRegisters()
+    reloadMemoryRegistersFromInstance(wasmInstance, ws0)
+
+    storep wasmInstance, CodeBlock[cfr]
+    loadp Callee[cfr], ws0
+if JSVALUE64
+    andp ~(constexpr JSValue::NativeCalleeTag), ws0
+end
+    leap WTFConfig + constexpr WTF::offsetOfWTFConfigLowestAccessibleAddress, ws1
+    loadp [ws1], ws1
+    addp ws1, ws0
+    storep ws0, UnboxedWasmCalleeStackSlot[cfr]
+
+    # Get new sp in ws1 and check stack height.
+    # This should match the calculation of m_stackSize, but with double the size for fpr arg storage and no locals.
+    move 8 + 8 * 2 + constexpr CallFrame::headerSizeInRegisters + 1, ws1
+    lshiftp 3, ws1
+    addp maxFrameExtentForSlowPathCall, ws1
+    subp cfr, ws1, ws1
+
+if not JSVALUE64
+    subp 8, ws1 # align stack pointer
+end
+
+if not ADDRESS64
+    bpa ws1, cfr, .stackOverflow
+end
+    bpbeq JSWebAssemblyInstance::m_stackMirror + StackManager::Mirror::m_trapAwareSoftStackLimit[wasmInstance], ws1, .stackHeightOK
+
+.checkStack:
+    preserveVolatileRegistersForSIMD()
+
+    storei PC, CallSiteIndex[cfr]
+    move wasmInstance, a0
+    move ws1, a1
+    cCall2(_ipint_extern_check_stack_and_vm_traps)
+    bpneq r1, (constexpr JSC::IPInt::SlowPathExceptionTag), .stackHeightOKAfterRestoringRegisters
+
+    addq (NumberOfWasmArgumentGPRs * MachineRegisterSize + NumberOfWasmArgumentFPRs * VectorRegisterSize), sp
+.stackOverflow:
+    # It's safe to request a StackOverflow error even if a TerminationException has
+    # been thrown. The exception throwing code downstream will handle it correctly
+    # and only throw the StackOverflow if a TerminationException is not already present.
+    # See slow_path_wasm_throw_exception() and Wasm::throwWasmToJSException().
+    throwException(StackOverflow)
+
+.oom:
+    throwException(OutOfMemory)
+
+.stackHeightOKAfterRestoringRegisters:
+    restoreVolatileRegistersForSIMD()
+
+.stackHeightOK:
+    move ws1, sp
+
+    forEachWasmArgumentGPR(macro (index, gpr1, gpr2)
+        const base = - CalleeSaveSpaceAsVirtualRegisters * MachineRegisterSize
+        if ARM64 or ARM64E
+            storepairq gpr2, gpr1, base - (index + 2) * MachineRegisterSize[cfr]
+        elsif JSVALUE64
+            storeq gpr2, base - (index + 2) * MachineRegisterSize[cfr]
+            storeq gpr1, base - (index + 1) * MachineRegisterSize[cfr]
+        else
+            store2ia gpr2, gpr1, base - (index + 2) * MachineRegisterSize[cfr]
+        end
+    end)
+    forEachWasmArgumentFPR(macro (index, fpr1, fpr2)
+        const base = -(NumberOfWasmArgumentGPRs + CalleeSaveSpaceAsVirtualRegisters + 2) * MachineRegisterSize
+        storev fpr1, base - (index + 0) * VectorRegisterSize[cfr]
+        storev fpr2, base - (index + 1) * VectorRegisterSize[cfr]
+    end)
+
+    move wasmInstance, a0
+    move cfr, a1
+    cCall2(_ipint_extern_simd_go_straight_to_bbq)
+    btpnz r1, .oom
+    move r0, ws0
+
+    forEachWasmArgumentGPR(macro (index, gpr1, gpr2)
+        const base = - CalleeSaveSpaceAsVirtualRegisters * MachineRegisterSize
+        if ARM64 or ARM64E
+            loadpairq base - (index + 2) * MachineRegisterSize[cfr], gpr2, gpr1
+        elsif JSVALUE64
+            loadq base - (index + 2) * MachineRegisterSize[cfr], gpr2
+            loadq base - (index + 1) * MachineRegisterSize[cfr], gpr1
+        else
+            load2ia base - (index + 2) * MachineRegisterSize[cfr], gpr2, gpr1
+        end
+    end)
+    forEachWasmArgumentFPR(macro (index, fpr1, fpr2)
+        const base = -(NumberOfWasmArgumentGPRs + CalleeSaveSpaceAsVirtualRegisters + 2) * MachineRegisterSize
+        loadv base - (index + 0) * VectorRegisterSize[cfr], fpr1
+        loadv base - (index + 1) * VectorRegisterSize[cfr], fpr2
+    end)
+
+    restoreIPIntRegisters()
+    restoreCallerPCAndCFR()
+    if ARM64E
+        leap _g_config, ws1
+        jmp JSCConfigGateMapOffset + (constexpr Gate::wasmOSREntry) * PtrSize[ws1], NativeToJITGatePtrTag # WasmEntryPtrTag
+    else
+        jmp ws0, WasmEntryPtrTag
+    end
+end
+    break
+end)
 
 macro ipintCatchCommon()
     validateOpcodeConfig(t0)
@@ -550,7 +680,7 @@ end
     loadp CodeBlock[cfr], wasmInstance
     loadp Wasm::IPIntCallee::m_bytecode[ws0], t1
     addp t1, PC
-    loadp Wasm::IPIntCallee::m_metadata[ws0], t1
+    loadp Wasm::IPIntCallee::m_metadata + VectorBufferOffset[ws0], t1
     addp t1, MC
 
     # Recompute PL

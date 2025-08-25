@@ -225,7 +225,13 @@ void TestRunner::waitUntilDownloadFinished()
 
 void TestRunner::waitUntilDone()
 {
-    RELEASE_ASSERT(InjectedBundle::singleton().isTestRunning());
+    if (!InjectedBundle::singleton().isTestRunning()) {
+        [[maybe_unused]] WTF::String testURL = "(unknown test)"_s;
+        if (WKURLRef url = m_testURL.get())
+            testURL = toWTFString(adoptWK(WKURLCopyString(url)));
+        LOG_ERROR("(%s) testRunner.waitUntilDone() called after test has terminated. Possibly an async handler was not awaited.", testURL.utf8().data());
+        return;
+    }
 
     setWaitUntilDone(true);
 }
@@ -590,11 +596,7 @@ static CallbackMap& callbackMap()
 }
 
 enum {
-    DidBeginSwipeCallbackID = 1,
-    WillEndSwipeCallbackID,
-    DidEndSwipeCallbackID,
-    DidRemoveSwipeSnapshotCallbackID,
-    TextDidChangeInTextFieldCallbackID,
+    TextDidChangeInTextFieldCallbackID = 1,
     TextFieldDidBeginEditingCallbackID,
     TextFieldDidEndEditingCallbackID,
     FirstUIScriptCallbackID = 100
@@ -1116,46 +1118,6 @@ void TestRunner::setAllowedMenuActions(JSContextRef context, JSValueRef actions)
     postPageMessage("SetAllowedMenuActions", messageBody);
 }
 
-void TestRunner::installDidBeginSwipeCallback(JSContextRef context, JSValueRef callback)
-{
-    cacheTestRunnerCallback(context, DidBeginSwipeCallbackID, callback);
-}
-
-void TestRunner::installWillEndSwipeCallback(JSContextRef context, JSValueRef callback)
-{
-    cacheTestRunnerCallback(context, WillEndSwipeCallbackID, callback);
-}
-
-void TestRunner::installDidEndSwipeCallback(JSContextRef context, JSValueRef callback)
-{
-    cacheTestRunnerCallback(context, DidEndSwipeCallbackID, callback);
-}
-
-void TestRunner::installDidRemoveSwipeSnapshotCallback(JSContextRef context, JSValueRef callback)
-{
-    cacheTestRunnerCallback(context, DidRemoveSwipeSnapshotCallbackID, callback);
-}
-
-void TestRunner::callDidBeginSwipeCallback()
-{
-    callTestRunnerCallback(DidBeginSwipeCallbackID);
-}
-
-void TestRunner::callWillEndSwipeCallback()
-{
-    callTestRunnerCallback(WillEndSwipeCallbackID);
-}
-
-void TestRunner::callDidEndSwipeCallback()
-{
-    callTestRunnerCallback(DidEndSwipeCallbackID);
-}
-
-void TestRunner::callDidRemoveSwipeSnapshotCallback()
-{
-    callTestRunnerCallback(DidRemoveSwipeSnapshotCallbackID);
-}
-
 void TestRunner::clearStatisticsDataForDomain(JSStringRef domain)
 {
     postSynchronousMessage("ClearStatisticsDataForDomain", toWK(domain));
@@ -1564,6 +1526,11 @@ void TestRunner::setStorageAccessPermission(JSContextRef context, bool granted, 
         { "Value", adoptWK(WKBooleanCreate(granted)) },
         { "SubFrameURL", toWK(subFrameURL) },
     }), callback);
+}
+
+void TestRunner::setStorageAccess(JSContextRef context, bool blocked, JSValueRef callback)
+{
+    postMessageWithAsyncReply(context, "SetStorageAccess", adoptWK(WKBooleanCreate(blocked)), callback);
 }
 
 void TestRunner::loadedSubresourceDomains(JSContextRef context, JSValueRef callback)

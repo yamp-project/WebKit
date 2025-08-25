@@ -234,70 +234,6 @@ end
     addp gprStorageSize + fprStorageSize, sp
 end
 
-macro preserveCalleeSavesUsedByWasm()
-    # NOTE: We intentionally don't save memoryBase and boundsCheckingSize here. See the comment
-    # in restoreCalleeSavesUsedByWasm() below for why.
-    subp CalleeSaveSpaceStackAligned, sp
-    if ARM64 or ARM64E
-        storepairq wasmInstance, PB, -16[cfr]
-    elsif X86_64 or RISCV64
-        storep PB, -0x8[cfr]
-        storep wasmInstance, -0x10[cfr]
-    elsif ARMv7
-        storep PB, -4[cfr]
-        storep wasmInstance, -8[cfr]
-    else
-        error
-    end
-end
-
-macro restoreCalleeSavesUsedByWasm()
-    # NOTE: We intentionally don't restore memoryBase and boundsCheckingSize here. These are saved
-    # and restored when entering Wasm by the JSToWasm wrapper and changes to them are meant
-    # to be observable within the same Wasm module.
-    if ARM64 or ARM64E
-        loadpairq -16[cfr], wasmInstance, PB
-    elsif X86_64 or RISCV64
-        loadp -0x8[cfr], PB
-        loadp -0x10[cfr], wasmInstance
-    elsif ARMv7
-        loadp -4[cfr], PB
-        loadp -8[cfr], wasmInstance
-    else
-        error
-    end
-end
-
-macro preserveGPRsUsedByTailCall(gpr0, gpr1)
-    storep gpr0, ThisArgumentOffset[sp]
-    storep gpr1, ArgumentCountIncludingThis[sp]
-end
-
-macro restoreGPRsUsedByTailCall(gpr0, gpr1)
-    loadp ThisArgumentOffset[sp], gpr0
-    loadp ArgumentCountIncludingThis[sp], gpr1
-end
-
-macro preserveReturnAddress(scratch)
-if X86_64
-    loadp ReturnPC[cfr], scratch
-    storep scratch, ReturnPC[sp]
-elsif ARM64 or ARM64E or ARMv7 or RISCV64
-    loadp ReturnPC[cfr], lr
-end
-end
-
-macro usePreviousFrame()
-    if ARM64 or ARM64E
-        loadpairq -PtrSize[cfr], PB, cfr
-    elsif ARMv7 or X86_64 or RISCV64
-        loadp -PtrSize[cfr], PB
-        loadp [cfr], cfr
-    else
-        error
-    end
-end
-
 macro reloadMemoryRegistersFromInstance(instance, scratch1)
 if not ARMv7
     loadp JSWebAssemblyInstance::m_cachedMemory[instance], memoryBase
@@ -331,111 +267,6 @@ macro callWasmCallSlowPath(slowPath, action)
     action(r0, r1)
 end
 
-# Tier up immediately, while saving full vectors in argument FPRs
-macro wasmPrologueSIMD(slow_path)
-if (WEBASSEMBLY_BBQJIT or WEBASSEMBLY_OMGJIT) and not ARMv7
-    preserveCallerPCAndCFR()
-    preserveCalleeSavesUsedByWasm()
-    reloadMemoryRegistersFromInstance(wasmInstance, ws0)
-
-    storep wasmInstance, CodeBlock[cfr]
-    loadp Callee[cfr], ws0
-if JSVALUE64
-    andp ~(constexpr JSValue::NativeCalleeTag), ws0
-end
-    leap WTFConfig + constexpr WTF::offsetOfWTFConfigLowestAccessibleAddress, ws1
-    loadp [ws1], ws1
-    addp ws1, ws0
-    storep ws0, UnboxedWasmCalleeStackSlot[cfr]
-
-    # Get new sp in ws1 and check stack height.
-    # This should match the calculation of m_stackSize, but with double the size for fpr arg storage and no locals.
-    move 8 + 8 * 2 + constexpr CallFrame::headerSizeInRegisters + 1, ws1
-    lshiftp 3, ws1
-    addp maxFrameExtentForSlowPathCall, ws1
-    subp cfr, ws1, ws1
-
-if not JSVALUE64
-    subp 8, ws1 # align stack pointer
-end
-
-if not ADDRESS64
-    bpa ws1, cfr, .stackOverflow
-end
-    bpbeq JSWebAssemblyInstance::m_stackMirror + StackManager::Mirror::m_trapAwareSoftStackLimit[wasmInstance], ws1, .stackHeightOK
-
-.checkStack:
-    preserveVolatileRegistersForSIMD()
-
-    storei PC, CallSiteIndex[cfr]
-    move wasmInstance, a0
-    move ws1, a1
-    cCall2(_ipint_extern_check_stack_and_vm_traps)
-    bpneq r1, (constexpr JSC::IPInt::SlowPathExceptionTag), .stackHeightOKAfterRestoringRegisters
-
-    addq (NumberOfWasmArgumentGPRs * MachineRegisterSize + NumberOfWasmArgumentFPRs * VectorRegisterSize), sp
-.stackOverflow:
-    # It's safe to request a StackOverflow error even if a TerminationException has
-    # been thrown. The exception throwing code downstream will handle it correctly
-    # and only throw the StackOverflow if a TerminationException is not already present.
-    # See slow_path_wasm_throw_exception() and Wasm::throwWasmToJSException().
-    throwException(StackOverflow)
-
-.stackHeightOKAfterRestoringRegisters:
-    restoreVolatileRegistersForSIMD()
-
-.stackHeightOK:
-    move ws1, sp
-
-    forEachWasmArgumentGPR(macro (index, gpr1, gpr2)
-        const base = - CalleeSaveSpaceAsVirtualRegisters * MachineRegisterSize
-        if ARM64 or ARM64E
-            storepairq gpr2, gpr1, base - (index + 2) * MachineRegisterSize[cfr]
-        elsif JSVALUE64
-            storeq gpr2, base - (index + 2) * MachineRegisterSize[cfr]
-            storeq gpr1, base - (index + 1) * MachineRegisterSize[cfr]
-        else
-            store2ia gpr2, gpr1, base - (index + 2) * MachineRegisterSize[cfr]
-        end
-    end)
-    forEachWasmArgumentFPR(macro (index, fpr1, fpr2)
-        const base = -(NumberOfWasmArgumentGPRs + CalleeSaveSpaceAsVirtualRegisters + 2) * MachineRegisterSize
-        storev fpr2, base - (index + 1) * VectorRegisterSize[cfr]
-        storev fpr1, base - (index + 0) * VectorRegisterSize[cfr]
-    end)
-
-    slow_path()
-    move r0, ws0
-
-    forEachWasmArgumentGPR(macro (index, gpr1, gpr2)
-        const base = - CalleeSaveSpaceAsVirtualRegisters * MachineRegisterSize
-        if ARM64 or ARM64E
-            loadpairq base - (index + 2) * MachineRegisterSize[cfr], gpr2, gpr1
-        elsif JSVALUE64
-            loadq base - (index + 2) * MachineRegisterSize[cfr], gpr2
-            loadq base - (index + 1) * MachineRegisterSize[cfr], gpr1
-        else
-            load2ia base - (index + 2) * MachineRegisterSize[cfr], gpr2, gpr1
-        end
-    end)
-    forEachWasmArgumentFPR(macro (index, fpr1, fpr2)
-        const base = -(NumberOfWasmArgumentGPRs + CalleeSaveSpaceAsVirtualRegisters + 2) * MachineRegisterSize
-        loadv base - (index + 1) * VectorRegisterSize[cfr], fpr2
-        loadv base - (index + 0) * VectorRegisterSize[cfr], fpr1
-    end)
-
-    restoreCalleeSavesUsedByWasm()
-    restoreCallerPCAndCFR()
-    if ARM64E
-        leap _g_config, ws1
-        jmp JSCConfigGateMapOffset + (constexpr Gate::wasmOSREntry) * PtrSize[ws1], NativeToJITGatePtrTag # WasmEntryPtrTag
-    else
-        jmp ws0, WasmEntryPtrTag
-    end
-end
-    break
-end
-
 if ARMv7
 macro branchIfWasmException(exceptionTarget)
     loadp CodeBlock[cfr], t3
@@ -444,20 +275,6 @@ macro branchIfWasmException(exceptionTarget)
     jmp exceptionTarget
 .noException:
 end
-end
-
-macro zeroExtend32ToWord(r)
-    if JSVALUE64
-        andq 0xffffffff, r
-    end
-end
-
-macro boxInt32(r, rTag)
-    if JSVALUE64
-        orq constexpr JSValue::NumberTag, r
-    else
-        move constexpr JSValue::Int32Tag, rTag
-    end
 end
 
 // If you change this, make sure to modify JSToWasm.cpp:createJSToWasmJITShared
@@ -578,17 +395,6 @@ end
     loadp Callee[cfr], ws0 # WebAssemblyFunction*
     loadp WebAssemblyFunction::m_instance[ws0], wasmInstance
 
-    # Memory
-    if ARM64 or ARM64E
-        loadpairq JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase, boundsCheckingSize
-    elsif X86_64
-        loadp JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase
-        loadp JSWebAssemblyInstance::m_cachedBoundsCheckingSize[wasmInstance], boundsCheckingSize
-    end
-    if not ARMv7
-        cagedPrimitiveMayBeNull(memoryBase, wa0)
-    end
-
     # Allocate stack space
     loadi WebAssemblyFunction::m_frameSize[ws0], wa0
     subp sp, wa0, wa0
@@ -608,14 +414,50 @@ if ASSERT_ENABLED
     end)
 end
 
+    # a0 = current stack frame position
+    move sp, a0
+
+    # Save wasmInstance and put the correct Callee into the stack for building the frame
+    storep wasmInstance, CodeBlock[cfr]
+
+if JSVALUE64
+    loadp Callee[cfr], memoryBase
+    transferp WebAssemblyFunction::m_boxedJSToWasmCallee[ws0], Callee[cfr]
+else
+    # Store old Callee to the stack temporarily
+    loadp Callee[cfr], ws1
+    push ws1, ws1
+    loadp WebAssemblyFunction::m_boxedJSToWasmCallee[ws0], ws1
+    storep ws1, Callee[cfr]
+end
+
     # Prepare frame
     move ws0, a2
     move cfr, a1
-    move sp, a0
     cCall3(_operationJSToWasmEntryWrapperBuildFrame)
+
+    # Restore Callee slot
+if JSVALUE64
+    storep memoryBase, Callee[cfr]
+else
+    loadp [sp], ws0
+    addp 2 * SlotSize, sp
+    storep ws0, Callee[cfr]
+end
 
     btpnz r1, .buildEntryFrameThrew
     move r0, ws0
+
+    # Memory
+    if ARM64 or ARM64E
+        loadpairq JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase, boundsCheckingSize
+    elsif X86_64
+        loadp JSWebAssemblyInstance::m_cachedMemory[wasmInstance], memoryBase
+        loadp JSWebAssemblyInstance::m_cachedBoundsCheckingSize[wasmInstance], boundsCheckingSize
+    end
+    if not ARMv7
+        cagedPrimitiveMayBeNull(memoryBase, wa0)
+    end
 
     # Arguments
 
@@ -969,24 +811,6 @@ macro commonWasmOp(opcodeName, opcodeStruct, prologue, fn)
 end
 
 # Entry point
-
-op(ipint_function_prologue_simd_trampoline, macro ()
-    tagReturnAddress sp
-    jmp _ipint_function_prologue_simd
-end)
-
-op(ipint_function_prologue_simd, macro ()
-    if not WEBASSEMBLY or C_LOOP
-        error
-    end
-
-    wasmPrologueSIMD(macro()
-        move wasmInstance, a0
-        move cfr, a1
-        cCall2(_ipint_extern_simd_go_straight_to_bbq)
-    end)
-    break
-end)
 
 macro jumpToException()
     if ARM64E

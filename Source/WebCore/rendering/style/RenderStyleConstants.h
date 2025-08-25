@@ -28,6 +28,7 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <type_traits>
 #include <wtf/EnumTraits.h>
 
 namespace WTF {
@@ -1167,6 +1168,11 @@ enum class EventListenerRegionType : uint32_t {
     NonPassiveMouseMove    = 1 << 30,
 };
 
+enum class MathShift : bool {
+    Normal,
+    Compact,
+};
+
 enum class MathStyle : bool {
     Normal,
     Compact,
@@ -1362,6 +1368,7 @@ WTF::TextStream& operator<<(WTF::TextStream&, Visibility);
 WTF::TextStream& operator<<(WTF::TextStream&, WhiteSpace);
 WTF::TextStream& operator<<(WTF::TextStream&, WhiteSpaceCollapse);
 WTF::TextStream& operator<<(WTF::TextStream&, WordBreak);
+WTF::TextStream& operator<<(WTF::TextStream&, MathShift);
 WTF::TextStream& operator<<(WTF::TextStream&, MathStyle);
 WTF::TextStream& operator<<(WTF::TextStream&, ContainIntrinsicSizeType);
 WTF::TextStream& operator<<(WTF::TextStream&, FieldSizing);

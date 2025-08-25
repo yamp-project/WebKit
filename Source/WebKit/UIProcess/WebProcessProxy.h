@@ -557,6 +557,10 @@ public:
     void setResourceMonitorRuleLists(RefPtr<WebCompiledContentRuleList>, CompletionHandler<void()>&&);
 #endif
 
+    std::optional<SandboxExtension::Handle> sandboxExtensionForFile(const String& fileName) const;
+    void addSandboxExtensionForFile(const String& fileName, SandboxExtension::Handle);
+    void clearSandboxExtensions();
+
 private:
     Type type() const final { return Type::WebContent; }
 
@@ -679,9 +683,9 @@ private:
 
 #if ENABLE(LOGD_BLOCKING_IN_WEBCONTENT)
 #if ENABLE(STREAMING_IPC_IN_LOG_FORWARDING)
-    void setupLogStream(uint32_t pid, IPC::StreamServerConnectionHandle&&, LogStreamIdentifier, CompletionHandler<void(IPC::Semaphore& streamWakeUpSemaphore, IPC::Semaphore& streamClientWaitSemaphore)>&&);
+    void createLogStream(IPC::StreamServerConnectionHandle&&, LogStreamIdentifier, CompletionHandler<void(IPC::Semaphore& streamWakeUpSemaphore, IPC::Semaphore& streamClientWaitSemaphore)>&&);
 #else
-    void setupLogStream(uint32_t pid, LogStreamIdentifier, CompletionHandler<void()>&&);
+    void createLogStream(LogStreamIdentifier, CompletionHandler<void()>&&);
 #endif
 #endif
 
@@ -853,11 +857,7 @@ private:
     bool m_hasRegisteredServiceWorkerClients { true };
 
 #if ENABLE(LOGD_BLOCKING_IN_WEBCONTENT)
-#if ENABLE(STREAMING_IPC_IN_LOG_FORWARDING)
     IPC::ScopedActiveMessageReceiveQueue<LogStream> m_logStream;
-#else
-    RefPtr<LogStream> m_logStream;
-#endif
 #endif
 
 #if ENABLE(CONTENT_EXTENSIONS)
@@ -867,6 +867,8 @@ private:
 #if ENABLE(REMOTE_INSPECTOR) && PLATFORM(COCOA)
     HashMap<WebCore::ServiceWorkerIdentifier, Ref<ServiceWorkerDebuggableProxy>> m_serviceWorkerDebuggableProxies;
 #endif
+
+    HashMap<String, SandboxExtension::Handle> m_fileSandboxExtensions;
 };
 
 WTF::TextStream& operator<<(WTF::TextStream&, const WebProcessProxy&);

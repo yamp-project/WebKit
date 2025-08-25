@@ -1333,11 +1333,6 @@ void WebProcessProxy::didReceiveInvalidMessage(IPC::Connection& connection, IPC:
 
     WebProcessPool::didReceiveInvalidMessage(messageName);
 
-#if ENABLE(IPC_TESTING_API)
-    if (connection.ignoreInvalidMessageForTesting())
-        return;
-#endif
-
     // Terminate the WebContent process.
     terminate();
 
@@ -3106,6 +3101,21 @@ void WebProcessProxy::setResourceMonitorRuleLists(RefPtr<WebCompiledContentRuleL
     sendWithAsyncReply(Messages::WebProcess::SetResourceMonitorContentRuleListAsync(ruleList->data()), WTFMove(completionHandler));
 }
 #endif
+
+std::optional<SandboxExtension::Handle> WebProcessProxy::sandboxExtensionForFile(const String& fileName) const
+{
+    return m_fileSandboxExtensions.getOptional(fileName);
+}
+
+void WebProcessProxy::addSandboxExtensionForFile(const String& fileName, SandboxExtension::Handle handle)
+{
+    m_fileSandboxExtensions.add(fileName, handle);
+}
+
+void WebProcessProxy::clearSandboxExtensions()
+{
+    m_fileSandboxExtensions.clear();
+}
 
 } // namespace WebKit
 

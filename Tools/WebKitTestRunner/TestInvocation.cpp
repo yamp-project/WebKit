@@ -458,11 +458,6 @@ void TestInvocation::didReceiveMessageFromInjectedBundle(WKStringRef messageName
         return;
     }
 
-    if (WKStringIsEqualToUTF8CString(messageName, "ResetUserMediaPermissionRequestCount")) {
-        TestController::singleton().resetUserMediaPermissionRequestCount();
-        return;
-    }
-
     if (WKStringIsEqualToUTF8CString(messageName, "SetCustomPolicyDelegate")) {
         auto messageBodyDictionary = dictionaryValue(messageBody);
         auto enabled = booleanValue(messageBodyDictionary, "enabled");
@@ -1000,6 +995,11 @@ WKRetainPtr<WKTypeRef> TestInvocation::didReceiveSynchronousMessageFromInjectedB
     if (WKStringIsEqualToUTF8CString(messageName, "UserMediaPermissionRequestCount"))
         return adoptWK(WKUInt64Create(TestController::singleton().userMediaPermissionRequestCount()));
 
+    if (WKStringIsEqualToUTF8CString(messageName, "ResetUserMediaPermissionRequestCount")) {
+        TestController::singleton().resetUserMediaPermissionRequestCount();
+        return nullptr;
+    }
+
     if (WKStringIsEqualToUTF8CString(messageName, "GrantNotificationPermission")) {
         WKPageSetPermissionLevelForTesting(TestController::singleton().mainWebView()->page(), stringValue(messageBody), true);
         return adoptWK(WKBooleanCreate(TestController::singleton().grantNotificationPermission(stringValue(messageBody))));
@@ -1513,26 +1513,6 @@ void TestInvocation::uiScriptDidComplete(const String& result, unsigned scriptCa
 void TestInvocation::outputText(const WTF::String& text)
 {
     m_textOutput.append(text);
-}
-
-void TestInvocation::didBeginSwipe()
-{
-    postPageMessage("CallDidBeginSwipeCallback");
-}
-
-void TestInvocation::willEndSwipe()
-{
-    postPageMessage("CallWillEndSwipeCallback");
-}
-
-void TestInvocation::didEndSwipe()
-{
-    postPageMessage("CallDidEndSwipeCallback");
-}
-
-void TestInvocation::didRemoveSwipeSnapshot()
-{
-    postPageMessage("CallDidRemoveSwipeSnapshotCallback");
 }
 
 void TestInvocation::notifyDownloadDone()

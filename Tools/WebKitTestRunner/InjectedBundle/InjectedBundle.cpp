@@ -248,30 +248,6 @@ void InjectedBundle::didReceiveMessageToPage(WKBundlePageRef page, WKStringRef m
         return;
     }
 
-    if (WKStringIsEqualToUTF8CString(messageName, "CallDidBeginSwipeCallback")) {
-        if (m_testRunner)
-            m_testRunner->callDidBeginSwipeCallback();
-        return;
-    }
-
-    if (WKStringIsEqualToUTF8CString(messageName, "CallWillEndSwipeCallback")) {
-        if (m_testRunner)
-            m_testRunner->callWillEndSwipeCallback();
-        return;
-    }
-
-    if (WKStringIsEqualToUTF8CString(messageName, "CallDidEndSwipeCallback")) {
-        if (m_testRunner)
-            m_testRunner->callDidEndSwipeCallback();
-        return;
-    }
-
-    if (WKStringIsEqualToUTF8CString(messageName, "CallDidRemoveSwipeSnapshotCallback")) {
-        if (m_testRunner)
-            m_testRunner->callDidRemoveSwipeSnapshotCallback();
-        return;
-    }
-
     if (WKStringIsEqualToUTF8CString(messageName, "NotifyDownloadDone")) {
         if (m_testRunner && m_testRunner->shouldFinishAfterDownload())
             m_testRunner->notifyDone();
@@ -550,7 +526,7 @@ unsigned InjectedBundle::userMediaPermissionRequestCount() const
 
 void InjectedBundle::resetUserMediaPermissionRequestCount()
 {
-    postPageMessage("ResetUserMediaPermissionRequestCount");
+    WKBundlePagePostSynchronousMessageForTesting(page()->page(), toWK("ResetUserMediaPermissionRequestCount").get(), 0, 0);
 }
 
 void InjectedBundle::setCustomPolicyDelegate(bool enabled, bool permissive)

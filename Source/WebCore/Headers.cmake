@@ -721,6 +721,10 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
 
     Modules/system-preview/ARKitBadgeSystemImage.h
 
+    Modules/url-pattern/URLPattern.h
+    Modules/url-pattern/URLPatternComponent.h
+    Modules/url-pattern/URLPatternInit.h
+
     Modules/web-locks/WebLock.h
     Modules/web-locks/WebLockIdentifier.h
     Modules/web-locks/WebLockManagerSnapshot.h
@@ -834,6 +838,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     accessibility/AXComputedObjectAttributeCache.h
     accessibility/AXCoreObject.h
     accessibility/AXGeometryManager.h
+    accessibility/AXListHelpers.h
     accessibility/AXLogger.h
     accessibility/AXLoggerBase.h
     accessibility/AXNotifications.h
@@ -846,7 +851,6 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     accessibility/AXTreeStore.h
     accessibility/AXTreeStoreInlines.h
     accessibility/AXUtilities.h
-    accessibility/AccessibilityListBox.h
     accessibility/AccessibilityMenuListPopup.h
     accessibility/AccessibilityMockObject.h
     accessibility/AccessibilityNodeObject.h
@@ -913,7 +917,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     bindings/js/DOMPromiseProxy.h
     bindings/js/DOMWrapperWorld.h
     bindings/js/ExceptionDetails.h
-    bindings/js/GCController.h
+    bindings/js/GarbageCollectionController.h
     bindings/js/IDBBindingUtilities.h
     bindings/js/JSCSSRuleCustom.h
     bindings/js/JSCSSStyleDeclarationCustom.h
@@ -1836,6 +1840,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     layout/integration/inline/LineSelection.h
 
     layout/layouttree/LayoutBox.h
+    layout/layouttree/LayoutBoxGeometry.h
     layout/layouttree/LayoutChildIterator.h
     layout/layouttree/LayoutContainingBlockChainIterator.h
     layout/layouttree/LayoutDescendantIterator.h
@@ -2008,6 +2013,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     page/ElementTargetingTypes.h
     page/EmptyAttachmentElementClient.h
     page/EventHandler.h
+    page/EventTimingInteractionID.h
     page/FocusController.h
     page/FocusDirection.h
     page/FocusEventData.h
@@ -2060,8 +2066,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     page/PageOverlayController.h
     page/PagePasteboardContext.h
     page/PartitionedSecurityOrigin.h
-    page/PerformanceEntry.h
-    page/PerformanceEventTiming.h
+    page/PerformanceEventTimingCandidate.h
     page/PerformanceLogging.h
     page/PerformanceLoggingClient.h
     page/PointerCaptureController.h
@@ -2193,6 +2198,7 @@ set(WebCore_PRIVATE_FRAMEWORK_HEADERS
     page/writing-tools/WritingToolsTypes.h
 
     platform/AbortableTaskQueue.h
+    platform/AudioEncoderActiveConfiguration.h
     platform/AudioSampleFormat.h
     platform/BoxExtents.h
     platform/BoxSides.h

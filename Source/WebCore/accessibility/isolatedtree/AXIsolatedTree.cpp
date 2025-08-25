@@ -29,13 +29,14 @@
 #include "AXIsolatedTree.h"
 
 #include "AXAttributeCacheScope.h"
+#include "AXGeometryManager.h"
 #include "AXIsolatedObject.h"
 #include "AXLogger.h"
 #include "AXNotifications.h"
 #include "AXTreeStore.h"
 #include "AXTreeStoreInlines.h"
 #include "AXUtilities.h"
-#include "AccessibilityTable.h"
+#include "AccessibilityImageMapLink.h"
 #include "AccessibilityTableCell.h"
 #include "AccessibilityTableRow.h"
 #include "DocumentInlines.h"
@@ -46,6 +47,7 @@
 #include <wtf/MonotonicTime.h>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/SetForScope.h>
+#include <wtf/SystemTracing.h>
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/MakeString.h>
 
@@ -159,6 +161,10 @@ RefPtr<AXIsolatedTree> AXIsolatedTree::create(AXObjectCache& axObjectCache)
     RefPtr document = axObjectCache.document();
     if (!document)
         return nullptr;
+
+    if (AXObjectCache::isAppleInternalInstall()) [[unlikely]]
+        WTFBeginSignpostAlways(tree.ptr(), InitialAccessibilityIsolatedTreeBuild, "building isolated tree for AXObjectCache: %" PRIVATE_LOG_STRING ", is the top-document: %d", axObjectCache.debugDescription().utf8().data(), document->isTopDocument());
+
     if (!Accessibility::inRenderTreeOrStyleUpdate(*document))
         document->updateLayoutIgnorePendingStylesheets();
 
@@ -186,6 +192,9 @@ RefPtr<AXIsolatedTree> AXIsolatedTree::create(AXObjectCache& axObjectCache)
 
     // Now that the tree is ready to take client requests, add it to the tree maps so that it can be found.
     storeTree(axObjectCache, tree);
+
+    if (AXObjectCache::isAppleInternalInstall()) [[unlikely]]
+        WTFEndSignpostAlways(tree.ptr(), InitialAccessibilityIsolatedTreeBuild);
     return tree;
 }
 
@@ -922,7 +931,7 @@ void AXIsolatedTree::updateDependentProperties(AccessibilityObject& axObject)
     updateTableAncestorColumns = updateTableAncestorColumns || isRowGroup(axObject.node());
 #endif
     for (RefPtr ancestor = axObject.parentObject(); ancestor; ancestor = ancestor->parentObject()) {
-        if (updateTableAncestorColumns && is<AccessibilityTable>(*ancestor)) {
+        if (updateTableAncestorColumns && ancestor->isTable()) {
             // Only `updateChildren` if the table is unignored, because otherwise `updateChildren` will ascend and update the next highest unignored ancestor, which doesn't accomplish our goal of updating table columns.
             if (ancestor->isIgnored())
                 break;
@@ -1577,6 +1586,9 @@ void AXIsolatedTree::processQueuedNodeUpdates()
     if (!cache)
         return;
 
+    if (AXObjectCache::isAppleInternalInstall()) [[unlikely]]
+        WTFBeginSignpostAlways(this, UpdateAccessibilityIsolatedTree, "updating isolated tree for AXObjectCache: %" PRIVATE_LOG_STRING "", axObjectCache() ? axObjectCache()->debugDescription().utf8().data() : "null");
+
     for (const auto& nodeIDs : m_needsNodeRemoval)
         removeNode(nodeIDs.key, nodeIDs.value);
     m_needsNodeRemoval.clear();
@@ -1616,6 +1628,9 @@ void AXIsolatedTree::processQueuedNodeUpdates()
     }
 
     queueRemovalsAndUnresolvedChanges();
+
+    if (AXObjectCache::isAppleInternalInstall()) [[unlikely]]
+        WTFEndSignpostAlways(this, UpdateAccessibilityIsolatedTree);
 }
 
 #if ENABLE(AX_THREAD_TEXT_APIS)
@@ -1929,8 +1944,9 @@ IsolatedObjectData createIsolatedObjectData(const Ref<AccessibilityObject>& axOb
             // The GeometryManager does not have a relative frame for ScrollViews, WebAreas, or scrollbars yet. We need to get it from the
             // live object so that we don't need to hit the main thread in the case a request comes in while the whole isolated tree is being built.
             setProperty(AXProperty::RelativeFrame, enclosingIntRect(object.relativeFrame()));
-        } else if (!object.renderer() && object.node() && is<AccessibilityNodeObject>(object)) {
+        } else if (!object.renderer() && object.node() && is<AccessibilityNodeObject>(object) && !is<AccessibilityImageMapLink>(object)) {
             // The frame of node-only AX objects is made up of their children.
+            // This excludes image-map links (a.k.a. <area> elements), which will never have rendered children.
             getsGeometryFromChildren = true;
         } else if (object.isMenuListPopup()) {
             // AccessibilityMenuListPopup's elementRect is hardcoded to return an empty rect, so preserve that behavior.
@@ -1977,7 +1993,7 @@ IsolatedObjectData createIsolatedObjectData(const Ref<AccessibilityObject>& axOb
 
         if (object.isTable()) {
             setProperty(AXProperty::IsTable, true);
-            setProperty(AXProperty::IsExposable, object.isExposable());
+            setProperty(AXProperty::IsExposableTable, object.isExposableTable());
             setObjectVectorProperty(AXProperty::Columns, object.columns());
             setObjectVectorProperty(AXProperty::Rows, object.rows());
             setObjectVectorProperty(AXProperty::Cells, object.cells());
