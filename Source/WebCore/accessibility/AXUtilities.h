@@ -24,9 +24,15 @@
 
 #pragma once
 
+#include "AXObjectCache.h"
+#include "Element.h"
+#include "Node.h"
+#include "RenderImage.h"
+
 namespace WebCore {
 
 enum class AXNotification : uint8_t;
+enum class AccessibilityRole : uint8_t;
 enum class NodeName : uint16_t;
 class ContainerNode;
 class Document;
@@ -35,6 +41,7 @@ class Node;
 class RenderImage;
 class RenderStyle;
 class RenderObject;
+class StyleProperties;
 
 bool hasRole(Element&, StringView role);
 bool hasAnyRole(Element&, Vector<StringView>&& roles);
@@ -59,6 +66,8 @@ bool hasAccNameAttribute(Element&);
 
 bool isNodeFocused(Node&);
 
+bool needsLayoutOrStyleRecalc(const Document&);
+
 bool isRenderHidden(const RenderStyle*);
 // Checks both CSS display properties, and CSS visibility properties.
 bool isRenderHidden(const RenderStyle&);
@@ -69,5 +78,9 @@ const RenderStyle* safeStyleFrom(Element&);
 WTF::TextStream& operator<<(WTF::TextStream&, AXNotification);
 
 void dumpAccessibilityTreeToStderr(Document&);
+
+String roleToString(AccessibilityRole);
+
+std::optional<CursorType> cursorTypeFrom(const StyleProperties&);
 
 } // WebCore

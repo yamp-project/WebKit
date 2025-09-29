@@ -74,7 +74,7 @@
 #import <WebCore/GraphicsLayer.h>
 #import <WebCore/HTMLAttachmentElement.h>
 #import <WebCore/HTMLImageElement.h>
-#import <WebCore/HTMLPlugInImageElement.h>
+#import <WebCore/HTMLPlugInElement.h>
 #import <WebCore/HitTestResult.h>
 #import <WebCore/ImageOverlay.h>
 #import <WebCore/ImmediateActionStage.h>
@@ -219,17 +219,6 @@ void WebPage::handleAcceptedCandidate(WebCore::TextCheckingResult acceptedCandid
 {
     if (RefPtr frame = m_page->focusController().focusedLocalFrame())
         frame->protectedEditor()->handleAcceptedCandidate(acceptedCandidate);
-}
-
-NSObject *WebPage::accessibilityObjectForMainFramePlugin()
-{
-    if (!m_page)
-        return nil;
-    
-    if (RefPtr pluginView = mainFramePlugIn())
-        return pluginView->accessibilityObject();
-
-    return nil;
 }
 
 static String commandNameForSelectorName(const String& selectorName)
@@ -539,7 +528,12 @@ bool WebPage::platformCanHandleRequest(const WebCore::ResourceRequest& request)
         return true;
 
     // FIXME: Return true if this scheme is any one WebKit2 knows how to handle.
+#if ENABLE(SWIFT_DEMO_URI_SCHEME)
+    return request.url().protocolIs("applewebdata"_s)
+        || request.url().protocolIs("x-swift-demo"_s);
+#else
     return request.url().protocolIs("applewebdata"_s);
+#endif
 }
 
 void WebPage::shouldDelayWindowOrderingEvent(const WebKit::WebMouseEvent& event, CompletionHandler<void(bool)>&& completionHandler)
@@ -833,7 +827,7 @@ void WebPage::performImmediateActionHitTestAtLocation(WebCore::FrameIdentifier f
     }
 
 #if ENABLE(PDF_PLUGIN)
-    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInImageElement>(element)) {
+    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInElement>(element)) {
         if (RefPtr pluginView = downcast<PluginView>(embedOrObject->pluginWidget())) {
             if (pluginView->performImmediateActionHitTestAtLocation(locationInViewCoordinates, immediateActionResult)) {
                 // FIXME (144030): Focus does not seem to get set to the PDF when invoking the menu.

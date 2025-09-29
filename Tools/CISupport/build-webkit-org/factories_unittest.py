@@ -629,6 +629,7 @@ class TestExpectedBuildSteps(unittest.TestCase):
             'prune-coresymbolicationd-cache-if-too-large',
             'install-cmake',
             'install-ninja',
+            'get-llvm-version',
             'print-clang-version',
             'checkout-llvm-project',
             'update-clang',
@@ -1404,7 +1405,7 @@ class TestExpectedBuildSteps(unittest.TestCase):
             'show-identifier',
             'delete-WebKitBuild-directory',
             'delete-stale-build-files',
-            'compile-jsc-32bit',
+            'compile-jsc',
             'jscore-test'
         ],
         'WPE-Linux-64-bit-Release-Build': [

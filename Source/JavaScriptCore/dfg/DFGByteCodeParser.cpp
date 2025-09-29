@@ -63,7 +63,9 @@
 #include "InstanceOfStatus.h"
 #include "JSArrayBufferConstructor.h"
 #include "JSArrayIterator.h"
+#include "JSAsyncFromSyncIterator.h"
 #include "JSBoundFunction.h"
+#include "JSRegExpStringIterator.h"
 #include "JSCInlines.h"
 #include "JSCellButterfly.h"
 #include "JSInternalPromise.h"
@@ -72,8 +74,11 @@
 #include "JSMapIterator.h"
 #include "JSModuleEnvironment.h"
 #include "JSModuleNamespaceObject.h"
+#include "JSPromiseAllContext.h"
 #include "JSPromiseConstructor.h"
+#include "JSPromiseReaction.h"
 #include "JSSetIterator.h"
+#include "JSWrapForValidIterator.h"
 #include "MapConstructor.h"
 #include "NullSetterFunction.h"
 #include "NumberConstructor.h"
@@ -4463,6 +4468,95 @@ auto ByteCodeParser::handleIntrinsicCall(Node* callee, Operand resultOperand, Ca
             addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSIteratorHelper::Field::Generator)), iteratorHelper, generator);
             addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSIteratorHelper::Field::UnderlyingIterator)), iteratorHelper, underlyingIterator);
             setResult(iteratorHelper);
+            return CallOptimizationResult::Inlined;
+        }
+
+        case WrapForValidIteratorCreateIntrinsic: {
+            if (argumentCountIncludingThis < 3)
+                return CallOptimizationResult::DidNothing;
+
+            insertChecks();
+            JSGlobalObject* globalObject = m_graph.globalObjectFor(currentNodeOrigin().semantic);
+            Node* iterator = get(virtualRegisterForArgumentIncludingThis(1, registerOffset));
+            Node* nextMethod = get(virtualRegisterForArgumentIncludingThis(2, registerOffset));
+            Node* wrapperObject = addToGraph(NewInternalFieldObject, OpInfo(m_graph.registerStructure(globalObject->wrapForValidIteratorStructure())));
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSWrapForValidIterator::Field::IteratedIterator)), wrapperObject, iterator);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSWrapForValidIterator::Field::IteratedNextMethod)), wrapperObject, nextMethod);
+            setResult(wrapperObject);
+            return CallOptimizationResult::Inlined;
+        }
+
+        case AsyncFromSyncIteratorCreateIntrinsic: {
+            if (argumentCountIncludingThis < 3)
+                return CallOptimizationResult::DidNothing;
+
+            insertChecks();
+            JSGlobalObject* globalObject = m_graph.globalObjectFor(currentNodeOrigin().semantic);
+            Node* syncIterator = get(virtualRegisterForArgumentIncludingThis(1, registerOffset));
+            Node* nextMethod = get(virtualRegisterForArgumentIncludingThis(2, registerOffset));
+            Node* asyncIteratorObject = addToGraph(NewInternalFieldObject, OpInfo(m_graph.registerStructure(globalObject->asyncFromSyncIteratorStructure())));
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSAsyncFromSyncIterator::Field::SyncIterator)), asyncIteratorObject, syncIterator);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSAsyncFromSyncIterator::Field::NextMethod)), asyncIteratorObject, nextMethod);
+            setResult(asyncIteratorObject);
+            return CallOptimizationResult::Inlined;
+        }
+
+        case RegExpStringIteratorCreateIntrinsic: {
+            if (argumentCountIncludingThis < 5)
+                return CallOptimizationResult::DidNothing;
+
+            insertChecks();
+            JSGlobalObject* globalObject = m_graph.globalObjectFor(currentNodeOrigin().semantic);
+            Node* regExp = get(virtualRegisterForArgumentIncludingThis(1, registerOffset));
+            Node* string = get(virtualRegisterForArgumentIncludingThis(2, registerOffset));
+            Node* global = get(virtualRegisterForArgumentIncludingThis(3, registerOffset));
+            Node* fullUnicode = get(virtualRegisterForArgumentIncludingThis(4, registerOffset));
+            Node* regExpStringIterator = addToGraph(NewInternalFieldObject, OpInfo(m_graph.registerStructure(globalObject->regExpStringIteratorStructure())));
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSRegExpStringIterator::Field::RegExp)), regExpStringIterator, regExp);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSRegExpStringIterator::Field::String)), regExpStringIterator, string);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSRegExpStringIterator::Field::Global)), regExpStringIterator, global);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSRegExpStringIterator::Field::FullUnicode)), regExpStringIterator, fullUnicode);
+            setResult(regExpStringIterator);
+            return CallOptimizationResult::Inlined;
+        }
+
+        case PromiseAllContextCreateIntrinsic: {
+            if (argumentCountIncludingThis < 5)
+                return CallOptimizationResult::DidNothing;
+
+            insertChecks();
+            JSGlobalObject* globalObject = m_graph.globalObjectFor(currentNodeOrigin().semantic);
+            Node* promise = get(virtualRegisterForArgumentIncludingThis(1, registerOffset));
+            Node* values = get(virtualRegisterForArgumentIncludingThis(2, registerOffset));
+            Node* remainingElementsCount = get(virtualRegisterForArgumentIncludingThis(3, registerOffset));
+            Node* index = get(virtualRegisterForArgumentIncludingThis(4, registerOffset));
+            Node* promiseAllContext = addToGraph(NewInternalFieldObject, OpInfo(m_graph.registerStructure(globalObject->promiseAllContextStructure())));
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseAllContext::Field::Promise)), promiseAllContext, promise);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseAllContext::Field::Values)), promiseAllContext, values);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseAllContext::Field::RemainingElementsCount)), promiseAllContext, remainingElementsCount);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseAllContext::Field::Index)), promiseAllContext, index);
+            setResult(promiseAllContext);
+            return CallOptimizationResult::Inlined;
+        }
+
+        case PromiseReactionCreateIntrinsic: {
+            if (argumentCountIncludingThis < 6)
+                return CallOptimizationResult::DidNothing;
+
+            insertChecks();
+            JSGlobalObject* globalObject = m_graph.globalObjectFor(currentNodeOrigin().semantic);
+            Node* promise = get(virtualRegisterForArgumentIncludingThis(1, registerOffset));
+            Node* onFulfilled = get(virtualRegisterForArgumentIncludingThis(2, registerOffset));
+            Node* onRejected = get(virtualRegisterForArgumentIncludingThis(3, registerOffset));
+            Node* context = get(virtualRegisterForArgumentIncludingThis(4, registerOffset));
+            Node* next = get(virtualRegisterForArgumentIncludingThis(5, registerOffset));
+            Node* promiseReaction = addToGraph(NewInternalFieldObject, OpInfo(m_graph.registerStructure(globalObject->promiseReactionStructure())));
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseReaction::Field::Promise)), promiseReaction, promise);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseReaction::Field::OnFulfilled)), promiseReaction, onFulfilled);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseReaction::Field::OnRejected)), promiseReaction, onRejected);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseReaction::Field::Context)), promiseReaction, context);
+            addToGraph(PutInternalField, OpInfo(static_cast<uint32_t>(JSPromiseReaction::Field::Next)), promiseReaction, next);
+            setResult(promiseReaction);
             return CallOptimizationResult::Inlined;
         }
 

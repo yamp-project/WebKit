@@ -22,6 +22,7 @@
 
 #pragma once
 
+#include <WebCore/CachedImage.h>
 #include <WebCore/CachedImageClient.h>
 #include <WebCore/CachedResourceHandle.h>
 #include <WebCore/Element.h>
@@ -83,6 +84,7 @@ public:
     void decode(Ref<DeferredPromise>&&);
 
     void setLoadManually(bool loadManually) { m_loadManually = loadManually; }
+    void setElementIsUserAgentShadowRootResource(bool value) { m_elementIsUserAgentShadowRootResource = value; }
 
     // FIXME: Delete this code. beforeload event no longer exists.
     bool hasPendingBeforeLoadEvent() const { return m_hasPendingBeforeLoadEvent; }
@@ -145,6 +147,7 @@ private:
     bool m_imageComplete : 1;
     bool m_loadManually : 1;
     bool m_elementIsProtected : 1;
+    bool m_elementIsUserAgentShadowRootResource : 1 { false };
     LazyImageLoadState m_lazyImageLoadState { LazyImageLoadState::None };
 };
 

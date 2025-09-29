@@ -64,7 +64,12 @@ class AllowedSPI:
 class AllowedReason(StrEnum):
     LEGACY = 'legacy'
 
+    # For SPI that we intend to replace with API before the next release.
     TEMPORARY_USAGE = 'temporary-usage'
+
+    # For pre-adopting new API before it is available in the SDK. There should
+    # be no active `staging` entries when WebKit ships.
+    STAGING = 'staging'
 
     # For SPI implementing non-essential web engine features that a browser
     # vendor would either not use or provide their own implementation.
@@ -86,7 +91,6 @@ class AllowList:
         seen_clss: dict[Union[str, AllowedSPI.Selector], AllowedSPI] = {}
         for reason in AllowedReason:
             for entry in doc.pop(reason.value, []):
-                syms = entry.pop('symbols', [])
                 clss = entry.pop('classes', [])
                 reqs = entry.pop('requires', [])
                 sels = []
@@ -94,6 +98,13 @@ class AllowList:
                     receiver = sel.get('class')
                     sels.append(AllowedSPI.Selector(sel['name'],
                                                     None if receiver == '?' else receiver))
+                # Symbols use C-style name mangling rules (implicit leading
+                # underscore), so that the names of C symbols in allowlists
+                # match their spelling in code. Internally, symbols are tracked
+                # in their raw form.
+                syms = []
+                for sym in entry.pop('symbols', []):
+                    syms.append(f'_{sym}')
 
                 bugs = AllowedSPI.Bugs(entry.pop('request', None),
                                        entry.pop('cleanup', None))
@@ -110,9 +121,11 @@ class AllowList:
                         raise ValueError('Allowlist entries marked '
                                          'temporary-usage must have a '
                                          f'"cleanup" bug: {allow}')
-                elif reason != AllowedReason.LEGACY and not bugs.request:
-                    raise ValueError('Allowlist entries must have a "request" '
-                                     f'bug: {allow}')
+                elif reason not in (AllowedReason.LEGACY,
+                                    AllowedReason.STAGING):
+                    if not bugs.request:
+                        raise ValueError('Allowlist entries must have a '
+                                         f'"request" bug: {allow}')
 
                 if entry:
                     raise ValueError('Unrecognized items in allowlist entry: '

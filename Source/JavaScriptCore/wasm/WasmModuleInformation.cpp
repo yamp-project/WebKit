@@ -25,10 +25,12 @@
 
 #include "config.h"
 #include "WasmModuleInformation.h"
+#include "WebAssemblyBuiltin.h"
 #include "WebAssemblyCompileOptions.h"
 
 #if ENABLE(WEBASSEMBLY)
 
+#include "WasmModuleDebugInfo.h"
 #include "WasmNameSection.h"
 
 namespace JSC { namespace Wasm {
@@ -36,6 +38,8 @@ namespace JSC { namespace Wasm {
 ModuleInformation::ModuleInformation()
     : nameSection(NameSection::create())
 {
+    if (Options::enableWasmDebugger()) [[unlikely]]
+        debugInfo = WTF::makeUnique<ModuleDebugInfo>(*this);
 }
 
 ModuleInformation::~ModuleInformation() = default;

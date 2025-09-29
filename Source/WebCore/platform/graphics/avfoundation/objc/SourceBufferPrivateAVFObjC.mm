@@ -67,6 +67,7 @@
 #import <wtf/WeakPtr.h>
 #import <wtf/WorkQueue.h>
 #import <wtf/cocoa/Entitlements.h>
+#import <wtf/darwin/DispatchExtras.h>
 #import <wtf/text/CString.h>
 
 #pragma mark - Soft Linking
@@ -98,7 +99,7 @@ static inline bool supportsAttachContentKey()
 
 static inline bool shouldAddContentKeyRecipients()
 {
-    return MediaSessionManagerCocoa::shouldUseModernAVContentKeySession() && !supportsAttachContentKey();
+    return !supportsAttachContentKey();
 }
 
 Ref<SourceBufferPrivateAVFObjC> SourceBufferPrivateAVFObjC::create(MediaSourcePrivateAVFObjC& parent, Ref<SourceBufferParser>&& parser)
@@ -254,7 +255,7 @@ bool SourceBufferPrivateAVFObjC::isMediaSampleAllowed(const MediaSample& sample)
 
         if (RefPtr textTrack = downcast<InbandTextTrackPrivateAVF>(result->second)) {
             PlatformSample platformSample = sample.platformSample();
-            textTrack->processVTTSample(platformSample.sample.cmSampleBuffer, sample.presentationTime());
+            textTrack->processVTTSample(platformSample.cmSampleBuffer(), sample.presentationTime());
         }
 
         return false;
@@ -314,10 +315,6 @@ void SourceBufferPrivateAVFObjC::didProvideContentKeyRequestInitializationDataFo
     mediaSource->sourceBufferKeyNeeded(this, initData);
 
     if (RefPtr session = player->cdmSession()) {
-        if (MediaSessionManagerCocoa::shouldUseModernAVContentKeySession()) {
-            // no-op.
-        } else if (auto parser = this->streamDataParser())
-            session->addParser(parser);
         if (hasSessionSemaphore)
             hasSessionSemaphore->signal();
         return;
@@ -344,10 +341,6 @@ void SourceBufferPrivateAVFObjC::didProvideContentKeyRequestInitializationDataFo
 
     if (RefPtr cdmInstance = m_cdmInstance) {
         if (RefPtr instanceSession = cdmInstance->sessionForKeyIDs(keyIDs.value())) {
-            if (MediaSessionManagerCocoa::shouldUseModernAVContentKeySession()) {
-                // no-op.
-            } else if (auto parser = this->streamDataParser())
-                [instanceSession->contentKeySession() addContentKeyRecipient:parser];
             if (m_hasSessionSemaphore) {
                 m_hasSessionSemaphore->signal();
                 m_hasSessionSemaphore = nullptr;
@@ -372,17 +365,11 @@ void SourceBufferPrivateAVFObjC::didProvideContentKeyRequestInitializationDataFo
 
 bool SourceBufferPrivateAVFObjC::needsVideoLayer() const
 {
-    if (!m_protectedTrackID)
-        return false;
-
-    if (!isEnabledVideoTrackID(*m_protectedTrackID))
-        return false;
-
     // When video content is protected and keys are assigned through
     // the renderers, decoding content through decompression sessions
     // will fail. In this scenario, ask the player to create a layer
     // instead.
-    return MediaSessionManagerCocoa::shouldUseModernAVContentKeySession();
+    return m_protectedTrackID && isEnabledVideoTrackID(*m_protectedTrackID);
 }
 
 Ref<MediaPromise> SourceBufferPrivateAVFObjC::appendInternal(Ref<SharedBuffer>&& data)
@@ -633,7 +620,7 @@ void SourceBufferPrivateAVFObjC::trackDidChangeEnabled(AudioTrackPrivate& track,
 #endif
 
             ThreadSafeWeakPtr weakThis { *this };
-            [renderer requestMediaDataWhenReadyOnQueue:dispatch_get_main_queue() usingBlock:^{
+            [renderer requestMediaDataWhenReadyOnQueue:mainDispatchQueueSingleton() usingBlock:^{
                 if (RefPtr protectedThis = weakThis.get())
                     protectedThis->didBecomeReadyForMoreSamples(trackID);
             }];
@@ -747,11 +734,6 @@ void SourceBufferPrivateAVFObjC::attemptToDecrypt()
         RefPtr instanceSession = cdmInstance->sessionForKeyIDs(m_keyIDs);
         if (!instanceSession)
             return;
-
-        if (!MediaSessionManagerCocoa::shouldUseModernAVContentKeySession()) {
-            if (auto parser = this->streamDataParser())
-                [instanceSession->contentKeySession() addContentKeyRecipient:parser];
-        }
     } else if (!m_session.get())
         return;
 
@@ -952,10 +934,6 @@ bool SourceBufferPrivateAVFObjC::canEnqueueSample(TrackID trackID, const MediaSa
     if (!sample.isProtected())
         return true;
 
-    // If sample buffers don't support modern AVContentKeySession: enqueue sample
-    if (!MediaSessionManagerCocoa::shouldUseModernAVContentKeySession())
-        return true;
-
     // if sample is encrypted, but we are not attached to a CDM: do not enqueue sample.
     if (!m_cdmInstance && !m_session.get())
         return false;
@@ -1009,7 +987,7 @@ void SourceBufferPrivateAVFObjC::enqueueSample(Ref<MediaSampleAVFObjC>&& sample,
 
     PlatformSample platformSample = sample->platformSample();
 
-    CMFormatDescriptionRef formatDescription = PAL::CMSampleBufferGetFormatDescription(platformSample.sample.cmSampleBuffer);
+    CMFormatDescriptionRef formatDescription = PAL::CMSampleBufferGetFormatDescription(platformSample.cmSampleBuffer());
     ASSERT(formatDescription);
     if (!formatDescription) {
         ERROR_LOG(logSiteIdentifier, "Received sample with a null formatDescription. Bailing.");
@@ -1059,7 +1037,7 @@ void SourceBufferPrivateAVFObjC::enqueueSample(Ref<MediaSampleAVFObjC>&& sample,
         attachContentKeyToSampleIfNeeded(sample);
 
         if (auto renderer = audioRendererForTrackID(trackID)) {
-            [renderer enqueueSampleBuffer:platformSample.sample.cmSampleBuffer];
+            [renderer enqueueSampleBuffer:platformSample.cmSampleBuffer()];
             if (RefPtr player = this->player(); player && !sample->isNonDisplaying())
                 player->setHasAvailableAudioSample(renderer.get(), true);
         }
@@ -1069,7 +1047,6 @@ void SourceBufferPrivateAVFObjC::enqueueSample(Ref<MediaSampleAVFObjC>&& sample,
 void SourceBufferPrivateAVFObjC::enqueueSampleBuffer(MediaSampleAVFObjC& sample, const MediaTime& minimumUpcomingTime)
 {
     attachContentKeyToSampleIfNeeded(sample);
-    WebSampleBufferVideoRendering *renderer = nil;
     if (RefPtr videoRenderer = m_videoRenderer) {
         videoRenderer->enqueueSample(sample, minimumUpcomingTime);
 
@@ -1082,46 +1059,18 @@ void SourceBufferPrivateAVFObjC::enqueueSampleBuffer(MediaSampleAVFObjC& sample,
         if (videoRenderer->isUsingDecompressionSession())
             return;
 
-        renderer = videoRenderer->renderer();
-#if HAVE(AVSAMPLEBUFFERDISPLAYLAYER_READYFORDISPLAY)
         if (RetainPtr displayLayer = videoRenderer->as<AVSampleBufferDisplayLayer>()) {
             // FIXME (117934497): Remove staging code once -[AVSampleBufferDisplayLayer isReadyForDisplay] is available in SDKs used by WebKit builders
             if ([displayLayer.get() respondsToSelector:@selector(isReadyForDisplay)])
                 return;
         }
-#endif
     }
-    RefPtr player = this->player();
-    if (!player || player->hasAvailableVideoFrame() || sample.isNonDisplaying())
-        return;
 
-    DEBUG_LOG(LOGIDENTIFIER, "adding buffer attachment");
-
-    [renderer prerollDecodeWithCompletionHandler:[weakThis = ThreadSafeWeakPtr { *this }, logSiteIdentifier = LOGIDENTIFIER] (BOOL success) mutable {
-        callOnMainThread([weakThis = WTFMove(weakThis), logSiteIdentifier, success] () {
-            RefPtr protectedThis = weakThis.get();
-            if (!protectedThis)
-                return;
-
-            if (!success) {
-                ERROR_LOG_WITH_THIS(protectedThis, logSiteIdentifier, "prerollDecodeWithCompletionHandler failed");
-                return;
-            }
-
-            RefPtr videoRenderer = protectedThis->m_videoRenderer;
-            if (!videoRenderer) {
-                ERROR_LOG_WITH_THIS(protectedThis, logSiteIdentifier, "prerollDecodeWithCompletionHandler called after renderer destroyed");
-                return;
-            }
-
-            protectedThis->videoRendererReadyForDisplayChanged(videoRenderer->renderer(), true);
-        });
-    }];
 }
 
 void SourceBufferPrivateAVFObjC::attachContentKeyToSampleIfNeeded(const MediaSampleAVFObjC& sample)
 {
-    if (!MediaSessionManagerCocoa::shouldUseModernAVContentKeySession() || !supportsAttachContentKey())
+    if (!supportsAttachContentKey())
         return;
 
     if (RefPtr cdmInstance = m_cdmInstance)
@@ -1208,7 +1157,7 @@ void SourceBufferPrivateAVFObjC::notifyClientWhenReadyForMoreSamples(TrackID tra
         }
     } else if (auto renderer = audioRendererForTrackID(trackID)) {
         ThreadSafeWeakPtr weakThis { *this };
-        [renderer requestMediaDataWhenReadyOnQueue:dispatch_get_main_queue() usingBlock:^{
+        [renderer requestMediaDataWhenReadyOnQueue:mainDispatchQueueSingleton() usingBlock:^{
             if (RefPtr protectedThis = weakThis.get())
                 protectedThis->didBecomeReadyForMoreSamples(trackID);
         }];

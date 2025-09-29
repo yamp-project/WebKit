@@ -28,9 +28,11 @@
 
 #import "AXObjectCache.h"
 #import "AXTreeStoreInlines.h"
+#import "AccessibilityObjectInlines.h"
 #import "ColorCocoa.h"
 #import "RenderObjectInlines.h"
 #import "WebAccessibilityObjectWrapperBase.h"
+#import "Widget.h"
 
 #if PLATFORM(IOS_FAMILY)
 #import <wtf/SoftLinking.h>
@@ -74,6 +76,17 @@ String AXCoreObject::speechHint() const
         builder.append(" no-punctuation"_s);
 
     return builder.toString();
+}
+
+// FIXME: We should create an AXCoreObjectInline.h file and move protectedWrapper() and protectedPlatformWidget() into it.
+RetainPtr<AccessibilityObjectWrapper> AXCoreObject::protectedWrapper() const
+{
+    return m_wrapper.get();
+}
+
+RetainPtr<PlatformWidget> AXCoreObject::protectedPlatformWidget() const
+{
+    return platformWidget();
 }
 
 // When modifying attributed strings, the range can come from a source which may provide faulty information (e.g. the spell checker).
@@ -473,13 +486,13 @@ bool AXCoreObject::isEmptyGroup()
         && ![renderWidgetChildren(*this) count];
 }
 
-AXCoreObject::AccessibilityChildrenVector AXCoreObject::sortedDescendants(size_t limit, PreSortedObjectType type) const
+AXCoreObject::AccessibilityChildrenVector AXCoreObject::crossFrameSortedDescendants(size_t limit, PreSortedObjectType type) const
 {
     ASSERT(type == PreSortedObjectType::LiveRegion || type == PreSortedObjectType::WebArea);
     auto sortedObjects = type == PreSortedObjectType::LiveRegion ? allSortedLiveRegions() : allSortedNonRootWebAreas();
     AXCoreObject::AccessibilityChildrenVector results;
     for (const Ref<AXCoreObject>& object : sortedObjects) {
-        if (isAncestorOfObject(object)) {
+        if (crossFrameIsAncestorOfObject(object)) {
             results.append(object);
             if (results.size() >= limit)
                 break;
@@ -625,6 +638,8 @@ PlatformRoleMap createPlatformRoleMap()
         { AccessibilityRole::Model, NSAccessibilityGroupRole },
         { AccessibilityRole::Suggestion, NSAccessibilityGroupRole },
         { AccessibilityRole::RemoteFrame, NSAccessibilityGroupRole },
+        { AccessibilityRole::LocalFrame, NSAccessibilityGroupRole },
+        { AccessibilityRole::FrameHost, NSAccessibilityGroupRole },
     };
     PlatformRoleMap roleMap;
     for (auto& role : roles)

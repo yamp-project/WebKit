@@ -34,12 +34,12 @@
 #include "EpochTimeStamp.h"
 #include "EventTrackingRegions.h"
 #include "ExceptionOr.h"
+#include "FrameConsoleClient.h"
 #include "HEVCUtilities.h"
 #include "IDLTypes.h"
 #include "ImageBufferResourceLimits.h"
 #include "NowPlayingInfo.h"
 #include "OrientationNotifier.h"
-#include "PageConsoleClient.h"
 #include "RealtimeMediaSource.h"
 #include "RenderingMode.h"
 #include "ResourceMonitorChecker.h"
@@ -680,8 +680,6 @@ public:
     void setCanvasNoiseInjectionSalt(HTMLCanvasElement&, unsigned long long salt);
     bool doesCanvasHavePendingCanvasNoiseInjection(HTMLCanvasElement&) const;
 
-    WEBCORE_TESTSUPPORT_EXPORT void setApplicationCacheOriginQuota(unsigned long long);
-
     void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
     void removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(const String& scheme);
 
@@ -930,7 +928,6 @@ public:
     ExceptionOr<String> pathStringWithShrinkWrappedRects(const Vector<double>& rectComponents, double radius);
 
 #if ENABLE(VIDEO)
-    String getCurrentMediaControlsStatusForElement(HTMLMediaElement&);
     void setMediaControlsMaximumRightContainerButtonCountOverride(HTMLMediaElement&, size_t);
     void setMediaControlsHidePlaybackRates(HTMLMediaElement&, bool);
 #endif // ENABLE(VIDEO)
@@ -1037,6 +1034,8 @@ public:
 #endif
 
     bool isHardwareVP9DecoderExpected();
+
+    String webContentProcessVariant() const;
 
 #if USE(AUDIO_SESSION)
     using AudioSessionCategory = WebCore::AudioSessionCategory;

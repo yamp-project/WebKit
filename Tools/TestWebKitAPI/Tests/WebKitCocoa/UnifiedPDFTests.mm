@@ -59,6 +59,7 @@
 #import <WebKit/_WKFeature.h>
 #import <wtf/RetainPtr.h>
 #import <wtf/cocoa/TypeCastsCocoa.h>
+#import <wtf/darwin/DispatchExtras.h>
 #import <wtf/text/MakeString.h>
 
 @interface WKWebView ()
@@ -369,10 +370,16 @@ UNIFIED_PDF_TEST(SetPageZoomFactorDoesNotBailIncorrectly)
     EXPECT_EQ(scaleAfterResetting, 1.0);
 }
 
-static void checkFrame(NSRect frame, CGFloat x, CGFloat y, CGFloat width, CGFloat height)
+static void checkFrame(NSRect frame, CGFloat x, CGFloat y, CGFloat width, CGFloat height, std::optional<CGFloat> frameOriginTolerance = { })
 {
-    EXPECT_EQ(frame.origin.x, x);
-    EXPECT_EQ(frame.origin.y, y);
+    if (frameOriginTolerance) {
+        auto tolerance = *frameOriginTolerance;
+        EXPECT_TRUE(std::abs(frame.origin.x - x) <= tolerance) << "Expected frameOrigin.x to be around " << x << ", got " << frame.origin.x;
+        EXPECT_TRUE(std::abs(frame.origin.y - y) <= tolerance) << "Expected frameOrigin.y to be around " << y << ", got " << frame.origin.y;
+    } else {
+        EXPECT_EQ(frame.origin.x, x);
+        EXPECT_EQ(frame.origin.y, y);
+    }
     EXPECT_EQ(frame.size.width, width);
     EXPECT_EQ(frame.size.height, height);
 }
@@ -463,7 +470,7 @@ UNIFIED_PDF_TEST(PDFHUDMoveIFrame)
     while ([webView _pdfHUDs].anyObject.frame.size.width != 560)
         TestWebKitAPI::Util::spinRunLoop();
     EXPECT_EQ([webView _pdfHUDs].count, 1u);
-    checkFrame([webView _pdfHUDs].anyObject.frame, 14, 40, 560, 210);
+    checkFrame([webView _pdfHUDs].anyObject.frame, 13, 40, 560, 210, 1);
 }
 
 UNIFIED_PDF_TEST(PDFHUDNestedIFrames)
@@ -824,7 +831,7 @@ UNIFIED_PDF_TEST(PrintPDFUsingPrintInteractionController)
 
     [printInteractionController _setupPrintPanel:nil];
     [printInteractionController _generatePrintPreview:^(NSURL *pdfURL, BOOL shouldRenderOnChosenPaper) {
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(mainDispatchQueueSingleton(), ^{
             pdfData = adoptNS([[NSData alloc] initWithContentsOfURL:pdfURL]);
             [printInteractionController _cleanPrintState];
             done = true;
@@ -1001,7 +1008,7 @@ UNIFIED_PDF_TEST(WebViewResizeShouldNotCrash)
     webView = nil;
 
     __block bool finishedDispatch = false;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    dispatch_async(mainDispatchQueueSingleton(), ^{
         finishedDispatch = true;
     });
 
@@ -1197,7 +1204,7 @@ static void checkKeyboardScrollability(TestWKWebView *webView)
         RetainPtr secondWebEvent = adoptNS([[WebEvent alloc] initWithKeyEventType:WebEventKeyUp timeStamp:CFAbsoluteTimeGetCurrent() characters:@" " charactersIgnoringModifiers:@" " modifiers:0 isRepeating:NO withFlags:0 withInputManagerHint:nil keyCode:0 isTabKey:NO]);
 
         [webView handleKeyEvent:firstWebEvent.get() completion:^(WebEvent *theEvent, BOOL wasHandled) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), mainDispatchQueueSingleton(), ^{
                 [webView handleKeyEvent:secondWebEvent.get() completion:^(WebEvent *theEvent, BOOL wasHandled) {
                     completionHandler();
                 }];

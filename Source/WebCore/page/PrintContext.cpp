@@ -22,14 +22,12 @@
 #include "PrintContext.h"
 
 #include "AXIsolatedTree.h"
-#include "AXObjectCache.h"
 #include "AXObjectCacheInlines.h"
 #include "CommonAtomStrings.h"
 #include "ContainerNodeInlines.h"
 #include "ElementTraversal.h"
 #include "FrameDestructionObserverInlines.h"
 #include "GraphicsContext.h"
-#include "LengthBox.h"
 #include "LocalFrame.h"
 #include "LocalFrameInlines.h"
 #include "LocalFrameView.h"
@@ -111,10 +109,10 @@ FloatBoxExtent PrintContext::computedPageMargin(FloatBoxExtent printMargin)
     auto marginLeft = style->marginLeft().tryFixed();
 
     return {
-        marginTop ? marginTop->value * pixelToPointScaleFactor : printMargin.top(),
-        marginRight ? marginRight->value * pixelToPointScaleFactor : printMargin.right(),
-        marginBottom ? marginBottom->value * pixelToPointScaleFactor : printMargin.bottom(),
-        marginLeft ? marginLeft->value * pixelToPointScaleFactor : printMargin.left(),
+        marginTop ? marginTop->resolveZoom(Style::ZoomNeeded { }) * pixelToPointScaleFactor : printMargin.top(),
+        marginRight ? marginRight->resolveZoom(Style::ZoomNeeded { }) * pixelToPointScaleFactor : printMargin.right(),
+        marginBottom ? marginBottom->resolveZoom(Style::ZoomNeeded { }) * pixelToPointScaleFactor : printMargin.bottom(),
+        marginLeft ? marginLeft->resolveZoom(Style::ZoomNeeded { }) * pixelToPointScaleFactor : printMargin.left(),
     };
 }
 
@@ -391,7 +389,7 @@ String PrintContext::pageProperty(LocalFrame* frame, const String& propertyName,
     // Implement formatters for properties we care about.
     if (propertyName == "margin-left"_s) {
         if (auto marginLeft = style->marginLeft().tryFixed())
-            return String::number(marginLeft->value);
+            return String::number(marginLeft->resolveZoom(Style::ZoomNeeded { }));
         return autoAtom();
     }
     if (propertyName == "line-height"_s)
@@ -400,8 +398,22 @@ String PrintContext::pageProperty(LocalFrame* frame, const String& propertyName,
         return String::number(style->fontDescription().computedSize());
     if (propertyName == "font-family"_s)
         return style->fontDescription().firstFamily();
-    if (propertyName == "size"_s)
-        return makeString(style->pageSize().width.value(), ' ', style->pageSize().height.value());
+    if (propertyName == "size"_s) {
+        return WTF::switchOn(style->pageSize(),
+            [&](const CSS::Keyword::Auto&) -> String {
+                return "auto"_s;
+            },
+            [&](const CSS::Keyword::Landscape&) -> String {
+                return "landscape"_s;
+            },
+            [&](const CSS::Keyword::Portrait&) -> String {
+                return "portrait"_s;
+            },
+            [&](const Style::PageSize::Lengths& lengths) {
+                return makeString(lengths.width().resolveZoom(Style::ZoomNeeded { }), ' ', lengths.height().resolveZoom(Style::ZoomNeeded { }));
+            }
+        );
+    }
 
     return makeString("pageProperty() unimplemented for: "_s, propertyName);
 }

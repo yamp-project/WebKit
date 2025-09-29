@@ -31,6 +31,10 @@
 
 namespace WebCore {
 class RenderingResourceObserver;
+namespace DisplayList {
+class DisplayList;
+}
+class Gradient;
 }
 
 namespace WTF {
@@ -39,14 +43,15 @@ template<> struct IsDeprecatedWeakRefSmartPointerException<WebCore::RenderingRes
 }
 
 namespace WebCore {
+class NativeImage;
 
 class RenderingResourceObserver : public CanMakeWeakPtr<RenderingResourceObserver> {
 public:
     virtual ~RenderingResourceObserver() = default;
-    virtual void willDestroyNativeImage(RenderingResourceIdentifier) = 0;
-    virtual void willDestroyGradient(RenderingResourceIdentifier) = 0;
-    virtual void willDestroyDecomposedGlyphs(RenderingResourceIdentifier) = 0;
+    virtual void willDestroyNativeImage(const NativeImage&) = 0;
+    virtual void willDestroyGradient(const Gradient&) = 0;
     virtual void willDestroyFilter(RenderingResourceIdentifier) = 0;
+    virtual void willDestroyDisplayList(const DisplayList::DisplayList&) = 0;
 protected:
     RenderingResourceObserver() = default;
 };
@@ -56,9 +61,6 @@ class RenderingResource
 public:
     virtual ~RenderingResource() = default;
 
-    virtual bool isNativeImage() const { return false; }
-    virtual bool isGradient() const { return false; }
-    virtual bool isDecomposedGlyphs() const { return false; }
     virtual bool isFilter() const { return false; }
 
     bool hasValidRenderingResourceIdentifier() const

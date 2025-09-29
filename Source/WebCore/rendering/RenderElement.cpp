@@ -49,7 +49,6 @@
 #include "InlineWalker.h"
 #include "LayoutElementBox.h"
 #include "LayoutIntegrationLineLayout.h"
-#include "LengthFunctions.h"
 #include "LocalFrame.h"
 #include "Logging.h"
 #include "Page.h"
@@ -393,29 +392,30 @@ inline bool RenderElement::shouldRepaintForStyleDifference(StyleDifference diff)
     return false;
 }
 
-void RenderElement::updateFillImages(const FillLayer* oldLayers, const FillLayer* newLayers)
+template<typename FillLayers> void RenderElement::updateFillImages(const FillLayers* oldLayers, const FillLayers* newLayers)
 {
-    auto fillImagesAreIdentical = [](const FillLayer* layer1, const FillLayer* layer2) -> bool {
-        if (layer1 == layer2)
+    auto fillImagesAreIdentical = [](const FillLayers* layers1, const FillLayers* layers2) -> bool {
+        if (layers1 == layers2)
             return true;
+        if (!layers1 || !layers2)
+            return false;
+        if (layers1->size() != layers2->size())
+            return false;
 
-        for (; layer1 && layer2; layer1 = layer1->next(), layer2 = layer2->next()) {
-            if (!arePointingToEqualData(layer1->image(), layer2->image()))
+        for (auto [layer1, layer2] : zippedRange(*layers1, *layers2)) {
+            if (layer1.image() != layer2.image())
                 return false;
-            if (layer1->image() && layer1->image()->usesDataProtocol())
+            if (RefPtr image = layer1.image().tryStyleImage(); image && (image->errorOccurred() || !image->hasImage() || image->usesDataProtocol()))
                 return false;
-            if (auto styleImage = layer1->image()) {
-                if (styleImage->errorOccurred() || !styleImage->hasImage() || styleImage->usesDataProtocol())
-                    return false;
-            }
         }
-
-        return !layer1 && !layer2;
+        return true;
     };
 
     auto isRegisteredWithNewFillImages = [&]() -> bool {
-        for (RefPtr layer = newLayers; layer; layer = layer->next()) {
-            if (layer->image() && !layer->image()->hasClient(*this))
+        if (!newLayers)
+            return true;
+        for (auto& layer : *newLayers) {
+            if (RefPtr image = layer.image().tryStyleImage(); image && !image->hasClient(*this))
                 return false;
         }
         return true;
@@ -427,13 +427,17 @@ void RenderElement::updateFillImages(const FillLayer* oldLayers, const FillLayer
         return;
 
     // Add before removing, to avoid removing all clients of an image that is in both sets.
-    for (RefPtr layer = newLayers; layer; layer = layer->next()) {
-        if (RefPtr image = layer->image())
-            image->addClient(*this);
+    if (newLayers) {
+        for (auto& layer : *newLayers) {
+            if (RefPtr image = layer.image().tryStyleImage())
+                image->addClient(*this);
+        }
     }
-    for (RefPtr layer = oldLayers; layer; layer = layer->next()) {
-        if (RefPtr image = layer->image())
-            image->removeClient(*this);
+    if (oldLayers) {
+        for (auto& layer : *oldLayers) {
+            if (RefPtr image = layer.image().tryStyleImage())
+                image->removeClient(*this);
+        }
     }
 }
 
@@ -1027,10 +1031,10 @@ void RenderElement::styleWillChange(StyleDifference diff, const RenderStyle& new
     }
 
     bool newStyleSlowScroll = false;
-    if (newStyle.hasAnyFixedBackground() && !settings().fixedBackgroundsPaintRelativeToDocument()) {
+    if (newStyle.backgroundLayers().hasImageWithAttachment(FillAttachment::FixedBackground) && !settings().fixedBackgroundsPaintRelativeToDocument()) {
         newStyleSlowScroll = true;
         bool drawsRootBackground = isDocumentElementRenderer() || (isBody() && !rendererHasBackground(document().documentElement()->renderer()));
-        if (drawsRootBackground && newStyle.hasEntirelyFixedBackground() && view().compositor().supportsFixedRootBackgroundCompositing())
+        if (drawsRootBackground && newStyle.backgroundLayers().hasEntirelyFixedBackground() && view().compositor().supportsFixedRootBackgroundCompositing())
             newStyleSlowScroll = false;
     }
 
@@ -1058,9 +1062,9 @@ void RenderElement::styleDidChange(StyleDifference diff, const RenderStyle* oldS
         if (!style && !oldStyle)
             return;
         if ((style && style->backgroundLayers().hasImage()) || (oldStyle && oldStyle->backgroundLayers().hasImage()))
-            updateFillImages(oldStyle ? &oldStyle->protectedBackgroundLayers().get() : nullptr, style ? &style->protectedBackgroundLayers().get() : nullptr);
+            updateFillImages(oldStyle ? &oldStyle->backgroundLayers() : nullptr, style ? &style->backgroundLayers() : nullptr);
         if ((style && style->maskLayers().hasImage()) || (oldStyle && oldStyle->maskLayers().hasImage()))
-            updateFillImages(oldStyle ? &oldStyle->protectedMaskLayers().get() : nullptr, style ? &style->protectedMaskLayers().get() : nullptr);
+            updateFillImages(oldStyle ? &oldStyle->maskLayers() : nullptr, style ? &style->maskLayers() : nullptr);
         updateImage(oldStyle ? oldStyle->borderImage().source().tryStyleImage().get() : nullptr, style ? style->borderImage().source().tryStyleImage().get() : nullptr);
         updateImage(oldStyle ? oldStyle->maskBorder().source().tryStyleImage().get() : nullptr, style ? style->maskBorder().source().tryStyleImage().get() : nullptr);
         updateShapeImage(oldStyle ? &oldStyle->shapeOutside() : nullptr, style ? &style->shapeOutside() : nullptr);
@@ -1190,7 +1194,7 @@ void RenderElement::willBeDestroyed()
     if (!renderTreeBeingDestroyed() && element())
         document().contentChangeObserver().rendererWillBeDestroyed(*element());
 #endif
-    if (m_style.hasAnyFixedBackground() && !settings().fixedBackgroundsPaintRelativeToDocument())
+    if (m_style.backgroundLayers().hasImageWithAttachment(FillAttachment::FixedBackground) && !settings().fixedBackgroundsPaintRelativeToDocument())
         view().frameView().removeSlowRepaintObject(*this);
 
     unregisterForVisibleInViewportCallback();
@@ -1208,10 +1212,10 @@ void RenderElement::willBeDestroyed()
     };
 
     auto unregisterImages = [&](auto& style) {
-        for (auto* backgroundLayer = &style.backgroundLayers(); backgroundLayer; backgroundLayer = backgroundLayer->next())
-            unregisterImage(backgroundLayer->protectedImage().get());
-        for (auto* maskLayer = &style.maskLayers(); maskLayer; maskLayer = maskLayer->next())
-            unregisterImage(maskLayer->protectedImage().get());
+        for (auto& backgroundLayer : style.backgroundLayers())
+            unregisterImage(backgroundLayer.image().tryStyleImage().get());
+        for (auto& maskLayer : style.maskLayers())
+            unregisterImage(maskLayer.image().tryStyleImage().get());
         unregisterImage(style.borderImage().source().tryStyleImage().get());
         unregisterImage(style.maskBorder().source().tryStyleImage().get());
         unregisterImage(style.shapeOutside().image().get());
@@ -1337,36 +1341,38 @@ void RenderElement::layout()
     clearNeedsLayout();
 }
 
-static bool mustRepaintFillLayers(const RenderElement& renderer, const FillLayer& layer)
+template<typename FillLayers> static bool mustRepaintFillLayers(const RenderElement& renderer, const FillLayers& layers)
 {
     // Nobody will use multiple layers without wanting fancy positioning.
-    if (layer.next())
+    if (layers.size() > 1)
         return true;
 
+    auto& layer = layers.first();
+
     // Make sure we have a valid image.
-    RefPtr image = layer.image();
+    RefPtr image = layer.image().tryStyleImage();
     if (!image || !image->canRender(&renderer, renderer.style().usedZoom()))
         return false;
 
     if (!layer.xPosition().isZero() || !layer.yPosition().isZero())
         return true;
 
-    auto sizeType = layer.sizeType();
-
-    if (sizeType == FillSizeType::Contain || sizeType == FillSizeType::Cover)
-        return true;
-
-    if (sizeType == FillSizeType::Size) {
-        auto size = layer.sizeLength();
-        if (size.width.isPercentOrCalculated() || size.height.isPercentOrCalculated())
+    return WTF::switchOn(layer.size(),
+        [](const CSS::Keyword::Contain&) {
             return true;
-        // If the image has neither an intrinsic width nor an intrinsic height, its size is determined as for 'contain'.
-        if ((size.width.isAuto() || size.height.isAuto()) && image->isGeneratedImage())
+        },
+        [](const CSS::Keyword::Cover&) {
             return true;
-    } else if (image->usesImageContainerSize())
-        return true;
-
-    return false;
+        },
+        [&](const Style::BackgroundSize::LengthSize& size) {
+            if (size.width().isPercentOrCalculated() || size.height().isPercentOrCalculated())
+                return true;
+            // If the image has neither an intrinsic width nor an intrinsic height, its size is determined as for 'contain'.
+            if ((size.width().isAuto() || size.height().isAuto()) && image->isGeneratedImage())
+                return true;
+            return false;
+        }
+    );
 }
 
 bool RenderElement::repaintAfterLayoutIfNeeded(SingleThreadWeakPtr<const RenderLayerModelObject>&& repaintContainer, RequiresFullRepaint requiresFullRepaint, const RepaintRects& oldRects, const RepaintRects& newRects)
@@ -1497,19 +1503,19 @@ bool RenderElement::repaintAfterLayoutIfNeeded(SingleThreadWeakPtr<const RenderL
 
         auto insetExtent = [&] {
             // Inset "content" is inside the border box (e.g. border, negative outline and box shadow).
-            auto borderRightExtent = [&]() -> LayoutUnit {
+            auto borderRightExtent = [&] -> LayoutUnit {
                 auto* renderBox = dynamicDowncast<RenderBox>(*this);
                 if (!renderBox)
                     return { };
                 auto borderBoxWidth = renderBox->width();
                 return std::max({
                     renderBox->borderRight(),
-                    Style::evaluate(style.borderTopRightRadius().width(), borderBoxWidth),
-                    Style::evaluate(style.borderBottomRightRadius().width(), borderBoxWidth),
+                    Style::evaluate<LayoutUnit>(style.borderTopRightRadius().width(), borderBoxWidth, Style::ZoomNeeded { }),
+                    Style::evaluate<LayoutUnit>(style.borderBottomRightRadius().width(), borderBoxWidth, Style::ZoomNeeded { }),
                 });
             };
-            auto outlineRightInsetExtent = [&]() -> LayoutUnit {
-                auto offset = LayoutUnit { Style::evaluate(outlineStyle.outlineOffset()) };
+            auto outlineRightInsetExtent = [&] -> LayoutUnit {
+                auto offset = Style::evaluate<LayoutUnit>(outlineStyle.outlineOffset(), Style::ZoomNeeded { });
                 return offset < 0 ? -offset : 0_lu;
             };
             auto boxShadowRightInsetExtent = [&] {
@@ -1548,12 +1554,12 @@ bool RenderElement::repaintAfterLayoutIfNeeded(SingleThreadWeakPtr<const RenderL
                 auto borderBoxHeight = renderBox->height();
                 return std::max({
                     renderBox->borderBottom(),
-                    Style::evaluate(style.borderBottomLeftRadius().height(), borderBoxHeight),
-                    Style::evaluate(style.borderBottomRightRadius().height(), borderBoxHeight),
+                    Style::evaluate<LayoutUnit>(style.borderBottomLeftRadius().height(), borderBoxHeight, Style::ZoomNeeded { }),
+                    Style::evaluate<LayoutUnit>(style.borderBottomRightRadius().height(), borderBoxHeight, Style::ZoomNeeded { }),
                 });
             };
-            auto outlineBottomInsetExtent = [&]() -> LayoutUnit {
-                auto offset = LayoutUnit { Style::evaluate(outlineStyle.outlineOffset()) };
+            auto outlineBottomInsetExtent = [&] -> LayoutUnit {
+                auto offset = Style::evaluate<LayoutUnit>(outlineStyle.outlineOffset(), Style::ZoomNeeded { });
                 return offset < 0 ? -offset : 0_lu;
             };
             auto boxShadowBottomInsetExtent = [&]() -> LayoutUnit {
@@ -2114,22 +2120,22 @@ static bool useShrinkWrappedFocusRingForOutlineStyleAuto()
 
 static void drawFocusRing(GraphicsContext& context, const Path& path, const RenderStyle& style, const Color& color)
 {
-    context.drawFocusRing(path, Style::evaluate(style.outlineWidth()), color);
+    context.drawFocusRing(path, Style::evaluate<float>(style.outlineWidth(), Style::ZoomNeeded { }), color);
 }
 
 static void drawFocusRing(GraphicsContext& context, Vector<FloatRect> rects, const RenderStyle& style, const Color& color)
 {
 #if PLATFORM(MAC)
-    context.drawFocusRing(rects, 0, Style::evaluate(style.outlineWidth()), color);
+    context.drawFocusRing(rects, 0, Style::evaluate<float>(style.outlineWidth(), Style::ZoomNeeded { }), color);
 #else
-    context.drawFocusRing(rects, Style::evaluate(style.outlineOffset()), Style::evaluate(style.outlineWidth()), color);
+    context.drawFocusRing(rects, Style::evaluate<float>(style.outlineOffset(), Style::ZoomNeeded { }), Style::evaluate<float>(style.outlineWidth(), Style::ZoomNeeded { }), color);
 #endif
 }
 
 void RenderElement::paintFocusRing(const PaintInfo& paintInfo, const RenderStyle& style, const Vector<LayoutRect>& focusRingRects) const
 {
     ASSERT(style.outlineStyle() == OutlineStyle::Auto);
-    float outlineOffset = Style::evaluate(style.outlineOffset());
+    auto outlineOffset = Style::evaluate<float>(style.outlineOffset(), Style::ZoomNeeded { });
     Vector<FloatRect> pixelSnappedFocusRingRects;
     float deviceScaleFactor = document().deviceScaleFactor();
     for (auto rect : focusRingRects) {
@@ -2260,7 +2266,7 @@ RenderBoxModelObject* RenderElement::offsetParent() const
     // A is the root element.
     // A is the HTML body element.
     // The computed value of the position property for element A is fixed.
-    if (isDocumentElementRenderer() || isBody() || isFixedPositioned())
+    if (isDocumentElementRenderer() || isBody() || (isFixedPositioned() && is<RenderView>(container())))
         return nullptr;
 
     // If A is an area HTML element which has a map HTML element somewhere in the ancestor
@@ -2271,6 +2277,7 @@ RenderBoxModelObject* RenderElement::offsetParent() const
     // true and stop this algorithm if such an ancestor is found:
     //     * The element is a containing block of absolutely-positioned descendants (regardless
     //       of whether there are any absolutely-positioned descendants).
+    //     * The element is a containing block of fixed-positioned descendants.
     //     * It is the HTML body element.
     //     * The computed value of the position property of A is static and the ancestor
     //       is one of the following HTML elements: td, th, or table.
@@ -2279,7 +2286,7 @@ RenderBoxModelObject* RenderElement::offsetParent() const
     bool skipTables = isPositioned();
     float currZoom = style().usedZoom();
     CheckedPtr current = parent();
-    while (current && (!current->element() || (!current->canContainAbsolutelyPositionedObjects() && !current->isBody()))) {
+    while (current && (!current->element() || (!current->isBody() && !(isFixedPositioned() ? current->canContainFixedPositionObjects() : current->canContainAbsolutelyPositionedObjects())))) {
         RefPtr element = current->element();
         if (!skipTables && element && (is<HTMLTableElement>(*element) || is<HTMLTableCellElement>(*element)))
             break;
@@ -2512,7 +2519,7 @@ static RenderObject::BlockContentHeightType includeNonFixedHeight(const RenderOb
         if (CheckedPtr block = dynamicDowncast<RenderBlock>(renderer)) {
             // For fixed height styles, if the overflow size of the element spills out of the specified
             // height, assume we can apply text auto-sizing.
-            if (block->effectiveOverflowY() == Overflow::Visible && fixedHeight->value < block->layoutOverflowRect().maxY())
+            if (block->effectiveOverflowY() == Overflow::Visible && fixedHeight->resolveZoom(Style::ZoomNeeded { }) < block->layoutOverflowRect().maxY())
                 return RenderObject::OverflowHeight;
         }
         return RenderObject::FixedHeight;

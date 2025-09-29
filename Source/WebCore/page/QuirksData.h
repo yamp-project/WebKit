@@ -114,6 +114,7 @@ struct WEBCORE_EXPORT QuirksData {
     bool shouldSuppressAutocorrectionAndAutocapitalizationInHiddenEditableAreasQuirk : 1 { false };
     bool shouldSynthesizeTouchEventsAfterNonSyntheticClickQuirk : 1 { false };
     bool shouldTreatAddingMouseOutEventListenerAsContentChange : 1 { false };
+    bool requirePageVisibilityToPlayAudioQuirk : 1 { false };
 #endif // PLATFORM(IOS_FAMILY)
 
 #if PLATFORM(IOS) || PLATFORM(VISION)
@@ -149,10 +150,15 @@ struct WEBCORE_EXPORT QuirksData {
 #endif
 
 #if ENABLE(MEDIA_STREAM)
+    bool shouldEnableFacebookFlagQuirk : 1 { false };
     bool shouldDisableImageCaptureQuirk : 1 { false };
     bool shouldEnableLegacyGetUserMediaQuirk : 1 { false };
     bool shouldEnableSpeakerSelectionPermissionsPolicyQuirk : 1 { false };
     bool shouldEnableEnumerateDeviceQuirk : 1 { false };
+    bool shouldEnableCameraAndMicrophonePermissionStateQuirk : 1 { false };
+#endif
+#if ENABLE(WEB_RTC)
+    bool shouldEnableRTCEncodedStreamsQuirk : 1 { false };
 #endif
 
 #if ENABLE(META_VIEWPORT)
@@ -195,6 +201,10 @@ struct WEBCORE_EXPORT QuirksData {
     bool shouldEnterNativeFullscreenWhenCallingElementRequestFullscreen : 1 { false };
     bool shouldDelayReloadWhenRegisteringServiceWorker : 1 { false };
     bool shouldDisableDOMAudioSession : 1 { false };
+
+#if HAVE(PIP_SKIP_PREROLL)
+    bool shouldDisableAdSkippingInPip : 1 { false };
+#endif
 };
 
 } // namespace WebCore

@@ -137,6 +137,7 @@ set(WTF_PUBLIC_HEADERS
     InstanceCounted.h
     Int128.h
     InterferenceGraph.h
+    IntervalSet.h
     IsoMalloc.h
     IsoMallocInlines.h
     IterationStatus.h
@@ -260,7 +261,6 @@ set(WTF_PUBLIC_HEADERS
     RefCounted.h
     RefCountedAndCanMakeWeakPtr.h
     RefCountedFixedVector.h
-    RefCountedLeakCounter.h
     RefCounter.h
     RefPtr.h
     RefTrackerMixin.h
@@ -459,6 +459,7 @@ set(WTF_PUBLIC_HEADERS
     text/AtomStringTable.h
     text/Base64.h
     text/CString.h
+    text/CStringView.h
     text/CharacterProperties.h
     text/CodePointIterator.h
     text/ConversionMode.h
@@ -466,7 +467,7 @@ set(WTF_PUBLIC_HEADERS
     text/ExternalStringImpl.h
     text/FastCharacterComparison.h
     text/IntegerToStringConversion.h
-    text/LChar.h
+    text/Latin1Character.h
     text/LineEnding.h
     text/MakeString.h
     text/NullTextBreakIterator.h
@@ -584,7 +585,6 @@ set(WTF_SOURCES
     RandomDevice.cpp
     ReadWriteLock.cpp
     RefCounted.cpp
-    RefCountedLeakCounter.cpp
     RefTrackerMixin.cpp
     RunLoop.cpp
     RuntimeApplicationChecks.cpp
@@ -649,6 +649,7 @@ set(WTF_SOURCES
     text/AtomStringTable.cpp
     text/Base64.cpp
     text/CString.cpp
+    text/CStringView.cpp
     text/ExternalStringImpl.cpp
     text/LineEnding.cpp
     text/StringBuffer.cpp
@@ -695,6 +696,7 @@ elseif (APPLE)
 
     list(APPEND WTF_PUBLIC_HEADERS
         cf/CFURLExtras.h
+        cf/NotificationCenterCF.h
         cf/TypeCastsCF.h
         cf/VectorCF.h
 

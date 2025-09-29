@@ -798,7 +798,7 @@ sub printTypeHelpersHeaderFile
     printLicenseHeader($F);
 
     print F "#pragma once\n\n";
-    print F "#include \"".$parameters{namespace}."Names.h\"\n\n";
+    print F "#include <WebCore/".$parameters{namespace}."Names.h>\n\n";
 
     # FIXME: Remove `if` condition below once HTMLElementTypeHelpers.h is made inline.
     if ($parameters{namespace} eq "SVG") {
@@ -819,10 +819,10 @@ sub printNamesHeaderFile
 
     printLicenseHeader($F);
     printHeaderHead($F, "DOM", $parameters{namespace}, <<END, "class $parameters{namespace}QualifiedName : public QualifiedName { };\n\n");
+#include <WebCore/QualifiedName.h>
 #include <span>
 #include <wtf/NeverDestroyed.h>
 #include <wtf/text/AtomString.h>
-#include "QualifiedName.h"
 END
 
     my $lowercaseNamespacePrefix = lc($parameters{namespacePrefix});
@@ -1066,8 +1066,8 @@ sub printNodeNameHeaderFile
     printLicenseHeader($F);
     print F "#pragma once\n";
     print F "\n";
-    print F "#include \"Namespace.h\"\n";
-    print F "#include \"TagName.h\"\n";
+    print F "#include <WebCore/Namespace.h>\n";
+    print F "#include <WebCore/TagName.h>\n";
     print F "#include <wtf/EnumTraits.h>\n";
     print F "#include <wtf/Forward.h>\n";
     print F "\n";
@@ -1122,7 +1122,7 @@ sub printNodeNameHeaderFile
     print F "} // namespace AttributeNames\n";
     print F "\n";
     print F "NodeName findNodeName(Namespace, const String&);\n";
-    print F "ElementName findHTMLElementName(std::span<const LChar>);\n";
+    print F "ElementName findHTMLElementName(std::span<const Latin1Character>);\n";
     print F "ElementName findHTMLElementName(std::span<const char16_t>);\n";
     print F "ElementName findHTMLElementName(const String&);\n";
     print F "ElementName findSVGElementName(const String&);\n";
@@ -1262,7 +1262,7 @@ sub printNodeNameCppFile
     print F "    return findNodeNameFromBuffer(ns, name.span16());\n";
     print F "}\n";
     print F "\n";
-    print F "ElementName findHTMLElementName(std::span<const LChar> buffer)\n";
+    print F "ElementName findHTMLElementName(std::span<const Latin1Character> buffer)\n";
     print F "{\n";
     print F "    return findHTMLNodeName(buffer);\n";
     print F "}\n";

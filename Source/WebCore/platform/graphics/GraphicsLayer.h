@@ -68,8 +68,8 @@ class TextStream;
 
 namespace WebCore {
 
-class Animation;
 class GraphicsContext;
+class GraphicsLayerAnimation;
 class GraphicsLayerFactory;
 class GraphicsLayerContentsDisplayDelegate;
 class GraphicsLayerAsyncContentsDisplayDelegate;
@@ -551,7 +551,7 @@ public:
     static String animationNameForTransition(AnimatedProperty);
 
     // Return true if the animation is handled by the compositing system.
-    virtual bool addAnimation(const KeyframeValueList&, const FloatSize& /*boxSize*/, const Animation*, const String& /*animationName*/, double /*timeOffset*/)  { return false; }
+    virtual bool addAnimation(const KeyframeValueList&, const FloatSize& /*boxSize*/, const GraphicsLayerAnimation*, const String& /*animationName*/, double /*timeOffset*/)  { return false; }
     virtual void pauseAnimation(const String& /*animationName*/, double /*timeOffset*/) { }
     virtual void removeAnimation(const String& /*animationName*/, std::optional<AnimatedProperty>) { }
     virtual void transformRelatedPropertyDidChange() { }
@@ -606,6 +606,9 @@ public:
 
     // For hosting this GraphicsLayer in a native layer hierarchy.
     virtual PlatformLayer* platformLayer() const { return nullptr; }
+#if PLATFORM(COCOA)
+    RetainPtr<CALayer> protectedPlatformLayer() const;
+#endif
 
     enum class CompositingCoordinatesOrientation : uint8_t { TopDown, BottomUp };
 

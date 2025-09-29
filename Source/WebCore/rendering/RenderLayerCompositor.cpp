@@ -33,6 +33,7 @@
 #include "CanvasRenderingContext.h"
 #include "Chrome.h"
 #include "ChromeClient.h"
+#include "ContainerNodeInlines.h"
 #include "DocumentFullscreen.h"
 #include "GraphicsLayer.h"
 #include "HTMLCanvasElement.h"
@@ -1240,7 +1241,7 @@ static bool canSkipComputeCompositingRequirementsForSubtree(const RenderLayer& l
 
 bool RenderLayerCompositor::allowBackingStoreDetachingForFixedPosition(RenderLayer& layer, const LayoutRect& absoluteBounds)
 {
-    ASSERT_UNUSED(layer, layer.behavesAsFixed());
+    ASSERT_UNUSED(layer, layer.behavesAsFixed() || layer.behavesAsSticky());
 
     // We'll allow detaching if the layer is outside the layout viewport. Fixed layers inside
     // the layout viewport can be revealed by async scrolling, so we want to pin their backing store.
@@ -1386,7 +1387,7 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* ancestor
         layerWillComposite();
         currentState.subtreeIsCompositing = true;
         becameCompositedAfterDescendantTraversal = true;
-        if (layer.behavesAsFixed())
+        if (layer.behavesAsFixed() || layer.behavesAsSticky())
             allowsBackingStoreDetachingForFixed = allowBackingStoreDetachingForFixedPosition(layer, layerExtent.bounds);
     };
 
@@ -1396,7 +1397,7 @@ void RenderLayerCompositor::computeCompositingRequirements(RenderLayer* ancestor
         computeExtent(overlapMap, layer, layerExtent);
         currentState.ancestorHasTransformAnimation |= layerExtent.hasTransformAnimation;
 
-        if (!allowsBackingStoreDetachingForFixed && layer.behavesAsFixed())
+        if (!allowsBackingStoreDetachingForFixed && (layer.behavesAsFixed() || layer.behavesAsSticky()))
             currentState.ancestorAllowsBackingStoreDetachingForFixed = allowsBackingStoreDetachingForFixed = allowBackingStoreDetachingForFixedPosition(layer, layerExtent.bounds);
 
         // Too hard to compute animated bounds if both us and some ancestor is animating transform.
@@ -4259,6 +4260,9 @@ ViewportConstrainedSublayers RenderLayerCompositor::viewportConstrainedSublayers
     if (!(layer.renderer().isFixedPositioned() && layer.behavesAsFixed()))
         return None;
 
+    if (layer.renderer().effectiveCapturedInViewTransition())
+        return None;
+
     for (auto* ancestor = layer.parent(); ancestor; ancestor = ancestor->parent()) {
         if (ancestor->hasCompositedScrollableOverflow())
             return sublayersForViewportConstrainedLayer();
@@ -4898,8 +4902,8 @@ void RenderLayerCompositor::rootOrBodyStyleChanged(RenderElement& renderer, cons
     if (oldBackgroundColor != renderer.style().visitedDependentColorWithColorFilter(CSSPropertyBackgroundColor))
         rootBackgroundColorOrTransparencyChanged();
 
-    bool hadFixedBackground = oldStyle && oldStyle->hasEntirelyFixedBackground();
-    if (hadFixedBackground != renderer.style().hasEntirelyFixedBackground())
+    bool hadFixedBackground = oldStyle && oldStyle->backgroundLayers().hasEntirelyFixedBackground();
+    if (hadFixedBackground != renderer.style().backgroundLayers().hasEntirelyFixedBackground())
         rootLayerConfigurationChanged();
     
     if (oldStyle && (oldStyle->overscrollBehaviorX() != renderer.style().overscrollBehaviorX() || oldStyle->overscrollBehaviorY() != renderer.style().overscrollBehaviorY())) {

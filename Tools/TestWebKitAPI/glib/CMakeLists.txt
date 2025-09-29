@@ -31,8 +31,6 @@ if (USE_LIBWEBRTC)
 endif ()
 
 set(WebKitGLibAPITests_SYSTEM_INCLUDE_DIRECTORIES
-    ${GIO_UNIX_INCLUDE_DIRS}
-    ${GLIB_INCLUDE_DIRS}
     ${GSTREAMER_AUDIO_INCLUDE_DIRS}
     ${GSTREAMER_INCLUDE_DIRS}
     ${LIBSOUP_INCLUDE_DIRS}
@@ -47,14 +45,12 @@ set(WebKitGLibAPITestsCore_LIBRARIES
 )
 
 set(WebKitGLibAPITest_LIBRARIES
-    ${GLIB_LIBRARIES}
     ${LIBSOUP_LIBRARIES}
     ${WebKitAPITest_LIBRARIES}
     WebKitGLibAPITestsCore
 )
 
 set(WebKitGLibAPITestExtension_LIBRARIES
-    ${GLIB_LIBRARIES}
     WebKit::WebKit
 )
 
@@ -168,6 +164,10 @@ ADD_WK2_TEST(TestDOMElement ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKitGLib/TestDOME
 ADD_WK2_TEST(TestGeolocationManager ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKitGLib/TestGeolocationManager.cpp)
 ADD_WK2_TEST(TestInputMethodContext ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKitGLib/TestInputMethodContext.cpp)
 
+if (ENABLE_WEBXR AND USE_OPENXR)
+    ADD_WK2_TEST(TestWebKitWebXR ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKitGLib/TestWebKitWebXR.cpp)
+endif ()
+
 if (ENABLE_WK_WEB_EXTENSIONS)
     ADD_WK2_TEST(TestWebKitWebExtensionMatchPattern ${TOOLS_DIR}/TestWebKitAPI/Tests/WebKitGLib/TestWebKitWebExtensionMatchPattern.cpp)
 endif ()
@@ -199,7 +199,6 @@ if (PORT STREQUAL "WPE" AND ENABLE_WPE_QT_API)
         ${CMAKE_BINARY_DIR}
         ${JavaScriptCoreGLib_DERIVED_SOURCES_DIR}
         ${JavaScriptCoreGLib_FRAMEWORK_HEADERS_DIR}
-        ${GLIB_INCLUDE_DIRS}
         ${LIBSOUP_INCLUDE_DIRS}
         ${TOOLS_DIR}/TestWebKitAPI
         ${WEBKIT_DIR}/WPEPlatform

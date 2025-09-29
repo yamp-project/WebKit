@@ -40,6 +40,10 @@ class Range;
 
 namespace WebCore {
 
+namespace LayoutIntegration {
+class GridLayout;
+}
+
 class GridArea;
 class GridLayoutState;
 class GridSpan;
@@ -77,6 +81,8 @@ public:
     void layoutBlock(RelayoutChildren, LayoutUnit pageLogicalHeight = 0_lu) override;
 
     bool canDropAnonymousBlockChild() const override { return false; }
+
+    bool isComputingTrackSizes() const { return m_isComputingTrackSizes; }
 
     bool hasDefiniteLogicalHeight() const;
     const std::optional<LayoutUnit> availableLogicalHeightForContentBox() const;
@@ -302,6 +308,12 @@ private:
     bool m_baselineItemsCached {false};
 
     mutable std::optional<GridItemSizeCache> m_intrinsicLogicalHeightsForRowSizingFirstPass;
+
+    bool layoutUsingGridFormattingContext();
+
+    std::optional<bool> m_hasGridFormattingContextLayout;
+
+    mutable bool m_isComputingTrackSizes { false };
 };
 
 } // namespace WebCore

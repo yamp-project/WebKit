@@ -31,6 +31,7 @@
 #include "Chrome.h"
 #include "ChromeClient.h"
 #include "ContainerNodeInlines.h"
+#include "DocumentInlines.h"
 #include "Editing.h"
 #include "Editor.h"
 #include "EditorClient.h"
@@ -51,7 +52,7 @@
 #include "HTMLTextAreaElement.h"
 #include "HitTestResult.h"
 #include "KeyboardEvent.h"
-#include "LocalFrame.h"
+#include "LocalFrameInlines.h"
 #include "LocalFrameView.h"
 #include "Logging.h"
 #include "Page.h"
@@ -547,9 +548,12 @@ FocusableElementSearchResult FocusController::findFocusableElementDescendingInto
     RefPtr element = startingElement;
     while (RefPtr owner = dynamicDowncast<HTMLFrameOwnerElement>(element)) {
         if (RefPtr remoteFrame = dynamicDowncast<RemoteFrame>(owner->contentFrame())) {
-            remoteFrame->client().findFocusableElementDescendingIntoRemoteFrame(direction, focusEventData, [](FoundElementInRemoteFrame found) {
+            RefPtr currentDocument = focusedLocalFrame() ? focusedLocalFrame()->document() : nullptr;
+            remoteFrame->client().findFocusableElementDescendingIntoRemoteFrame(direction, focusEventData, [currentDocument](FoundElementInRemoteFrame found) {
+                if (found == FoundElementInRemoteFrame::Yes && currentDocument)
+                    currentDocument->setFocusedElement(nullptr);
+
                 // FIXME: Implement sibling frame search by continuing here.
-                UNUSED_PARAM(found);
             });
 
             return { nullptr, ContinuedSearchInRemoteFrame::Yes };
@@ -636,7 +640,7 @@ bool FocusController::advanceFocusInDocumentOrder(FocusDirection direction, cons
     RefPtr startingNode = document->focusNavigationStartingNode(direction);
     auto findResult = findAndFocusElementInDocumentOrderStartingWithFrame(*frame, startingNode, startingNode, direction, focusEventData, initialFocus, ContinuingRemoteSearch::No);
 
-    return findResult.element;
+    return findResult.element || findResult.relinquishedFocusToChrome == RelinquishedFocusToChrome::Yes;
 }
 
 FocusableElementSearchResult FocusController::findAndFocusElementInDocumentOrderStartingWithFrame(Ref<LocalFrame> frame, RefPtr<Node> scopeNode, RefPtr<Node> startingNode, FocusDirection direction, const FocusEventData& focusEventData, InitialFocus initialFocus, ContinuingRemoteSearch continuingRemoteSearch)
@@ -666,8 +670,10 @@ FocusableElementSearchResult FocusController::findAndFocusElementInDocumentOrder
 
         // We didn't find a node to focus, so we should try to pass focus to Chrome.
         if (initialFocus == InitialFocus::No) {
-            if (relinquishFocusToChrome(direction))
+            if (relinquishFocusToChrome(direction)) {
+                findResult.relinquishedFocusToChrome = RelinquishedFocusToChrome::Yes;
                 return findResult;
+            }
         }
 
         // Chrome doesn't want focus, so we should wrap focus.

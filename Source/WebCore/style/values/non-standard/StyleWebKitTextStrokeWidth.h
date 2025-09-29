@@ -53,7 +53,12 @@ template<> struct CSSValueConversion<WebkitTextStrokeWidth> { auto operator()(Bu
 
 // MARK: - Evaluate
 
-template<> struct Evaluation<WebkitTextStrokeWidth> { constexpr auto operator()(const WebkitTextStrokeWidth& value) -> float { return value.value.value; } };
+template<> struct Evaluation<WebkitTextStrokeWidth, float> {
+    constexpr auto operator()(const WebkitTextStrokeWidth& value, ZoomNeeded token) -> float
+    {
+        return value.value.resolveZoom(token);
+    }
+};
 
 } // namespace Style
 } // namespace WebCore

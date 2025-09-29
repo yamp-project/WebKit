@@ -154,6 +154,11 @@ void PageConfiguration::setInitialSandboxFlags(WebCore::SandboxFlags sandboxFlag
     m_data.initialSandboxFlags = sandboxFlags;
 }
 
+void PageConfiguration::setInitialReferrerPolicy(WebCore::ReferrerPolicy referrerPolicy)
+{
+    m_data.initialReferrerPolicy = referrerPolicy;
+}
+
 WebProcessPool& PageConfiguration::processPool() const
 {
     return m_data.processPool.get();
@@ -367,14 +372,21 @@ bool PageConfiguration::lockdownModeEnabled() const
     return lockdownModeEnabledBySystem();
 }
 
-void PageConfiguration::setAllowJSHandleInPageContentWorld(bool allow)
+bool PageConfiguration::enhancedSecurityEnabled() const
 {
-    m_data.allowJSHandleInPageContentWorld = allow;
+    if (RefPtr policies = m_data.defaultWebsitePolicies.getIfExists())
+        return policies->enhancedSecurityEnabled();
+    return false;
 }
 
-bool PageConfiguration::allowJSHandleInPageContentWorld() const
+void PageConfiguration::setAllowPostingLegacySynchronousMessages(bool allow)
 {
-    return m_data.allowJSHandleInPageContentWorld;
+    m_data.allowPostingLegacySynchronousMessages = allow;
+}
+
+bool PageConfiguration::allowPostingLegacySynchronousMessages() const
+{
+    return m_data.allowPostingLegacySynchronousMessages;
 }
 
 void PageConfiguration::setDelaysWebProcessLaunchUntilFirstLoad(bool delaysWebProcessLaunchUntilFirstLoad)

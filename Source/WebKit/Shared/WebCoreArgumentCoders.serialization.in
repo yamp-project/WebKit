@@ -1536,7 +1536,7 @@ struct WebCore::PushSubscriptionData {
 [RefCounted] class WebCore::Report {
     String type()
     String url()
-    RefPtr<WebCore::ReportBody> body()
+    RefPtr<WebCore::ReportBody> protectedBody()
 };
 
 [RefCounted] class WebCore::TestReportBody {
@@ -1954,11 +1954,7 @@ enum class WTFLogChannelState : uint8_t {
     OnWithAccumulation
 };
 
-enum class WebCore::ScrollSnapStrictness : uint8_t {
-    None,
-    Proximity,
-    Mandatory
-};
+enum class WebCore::ScrollSnapStrictness : bool;
 
 enum class WebCore::LengthType : uint8_t {
     Auto,
@@ -2331,6 +2327,7 @@ class WebCore::BlobPart {
     DisplayP3,
     ExtendedA98RGB,
     ExtendedDisplayP3,
+    ExtendedLinearDisplayP3,
     ExtendedLinearSRGB,
     ExtendedProPhotoRGB,
     ExtendedRec2020,
@@ -2339,6 +2336,7 @@ class WebCore::BlobPart {
     HWB,
     LCH,
     Lab,
+    LinearDisplayP3,
     LinearSRGB,
     OKLCH,
     OKLab,
@@ -2641,25 +2639,13 @@ enum class WebCore::PixelFormat : uint8_t {
 #endif
 };
 
+enum class WebCore::AdjustViewSize : bool;
+
 enum class WebCore::UseLosslessCompression : bool;
 
 [AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ImageBufferFormat {
-    WebCore::ImageBufferPixelFormat pixelFormat;
+    WebCore::PixelFormat pixelFormat;
     WebCore::UseLosslessCompression useLosslessCompression;
-};
-
-enum class WebCore::ImageBufferPixelFormat : uint8_t {
-    BGRX8,
-    BGRA8,
-#if ENABLE(PIXEL_FORMAT_RGB10)
-    RGB10,
-#endif
-#if ENABLE(PIXEL_FORMAT_RGB10A8)
-    RGB10A8,
-#endif
-#if ENABLE(PIXEL_FORMAT_RGBA16F)
-    RGBA16F,
-#endif
 };
 
 [AdditionalEncoder=StreamConnectionEncoder] struct WebCore::PixelBufferFormat {
@@ -3016,7 +3002,7 @@ header: <WebCore/KeyboardScroll.h>
 }
 
 [RefCounted] class WebCore::PerspectiveTransformOperation {
-    std::optional<WebCore::Length> perspective();
+    std::optional<float> perspective();
 }
 
 [RefCounted] class WebCore::MatrixTransformOperation {
@@ -3072,6 +3058,7 @@ class WebCore::TransformOperations {
     WebCore::ColorInterpolationMethod colorInterpolationMethod();
     WebCore::GradientSpreadMethod spreadMethod();
     WebCore::GradientColorStops stops();
+    bool isTransient();
 }
 
 header: <WebCore/Pattern.h>
@@ -3157,11 +3144,6 @@ struct WebCore::LengthPoint {
     WebCore::Length y;
 }
 
-struct WebCore::LengthSize {
-    WebCore::Length width;
-    WebCore::Length height;
-}
-
 class WebCore::SVGPathByteStream {
     Vector<unsigned char> bytes();
 }
@@ -3186,11 +3168,11 @@ header: <WebCore/StylePrimitiveNumericTypes.h>
 };
 
 [CustomHeader, Nested] struct WebCore::Style::LengthNonnegative {
-    float value;
+    float unresolvedValue();
 };
 using WebCore::Style::LengthAll = WebCore::Style::Length<WebCore::CSS::All>;
 [CustomHeader, Nested] struct WebCore::Style::Length<WebCore::CSS::All> {
-    float value;
+    float unresolvedValue();
 };
 
 [CustomHeader, Nested] struct WebCore::Style::Percentage<WebCore::CSS::Nonnegative> {
@@ -3682,7 +3664,7 @@ enum class WebCore::ResourceLoadPriority : uint8_t {
     MemoryCache,
     MemoryCacheAfterValidation,
     ServiceWorker,
-    ApplicationCache,
+    LegacyApplicationCachePlaceholder,
     DOMCache,
     InspectorOverride
 };
@@ -4582,7 +4564,7 @@ enum class WebCore::ScrollType : bool;
 }
 
 [Alias=struct ScrollSnapOffsetsInfo<float,WebCore::FloatRect>, CustomHeader] alias WebCore::FloatScrollSnapOffsetsInfo {
-    WebCore::ScrollSnapStrictness strictness;
+    std::optional<WebCore::ScrollSnapStrictness> strictness;
     Vector<WebCore::FloatSnapOffset> horizontalSnapOffsets;
     Vector<WebCore::FloatSnapOffset> verticalSnapOffsets;
     Vector<WebCore::FloatRect> snapAreas;
@@ -5087,6 +5069,7 @@ enum class WebCore::PreserveResolution : bool;
     SRGB,
     SRGBLinear,
     DisplayP3,
+    DisplayP3Linear,
     A98RGB,
     ProPhotoRGB,
     Rec2020,
@@ -5123,6 +5106,8 @@ enum class WebCore::PreserveResolution : bool;
 };
 [Nested, AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ColorInterpolationMethod::DisplayP3 {
 };
+[Nested, AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ColorInterpolationMethod::DisplayP3Linear {
+};
 [Nested, AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ColorInterpolationMethod::A98RGB {
 };
 [Nested, AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ColorInterpolationMethod::ProPhotoRGB {
@@ -5135,7 +5120,7 @@ enum class WebCore::PreserveResolution : bool;
 };
 
 [AdditionalEncoder=StreamConnectionEncoder] struct WebCore::ColorInterpolationMethod {
-    Variant<WebCore::ColorInterpolationMethod::HSL, WebCore::ColorInterpolationMethod::HWB, WebCore::ColorInterpolationMethod::LCH, WebCore::ColorInterpolationMethod::Lab, WebCore::ColorInterpolationMethod::OKLCH, WebCore::ColorInterpolationMethod::OKLab, WebCore::ColorInterpolationMethod::SRGB, WebCore::ColorInterpolationMethod::SRGBLinear, WebCore::ColorInterpolationMethod::DisplayP3, WebCore::ColorInterpolationMethod::A98RGB, WebCore::ColorInterpolationMethod::ProPhotoRGB, WebCore::ColorInterpolationMethod::Rec2020, WebCore::ColorInterpolationMethod::XYZD50, WebCore::ColorInterpolationMethod::XYZD65> colorSpace;
+    Variant<WebCore::ColorInterpolationMethod::HSL, WebCore::ColorInterpolationMethod::HWB, WebCore::ColorInterpolationMethod::LCH, WebCore::ColorInterpolationMethod::Lab, WebCore::ColorInterpolationMethod::OKLCH, WebCore::ColorInterpolationMethod::OKLab, WebCore::ColorInterpolationMethod::SRGB, WebCore::ColorInterpolationMethod::SRGBLinear, WebCore::ColorInterpolationMethod::DisplayP3, WebCore::ColorInterpolationMethod::DisplayP3Linear, WebCore::ColorInterpolationMethod::A98RGB, WebCore::ColorInterpolationMethod::ProPhotoRGB, WebCore::ColorInterpolationMethod::Rec2020, WebCore::ColorInterpolationMethod::XYZD50, WebCore::ColorInterpolationMethod::XYZD65> colorSpace;
     WebCore::AlphaPremultiplication alphaPremultiplication;
 };
 
@@ -6148,28 +6133,29 @@ struct WebCore::ContentRuleListResults {
 };
 
 struct WebCore::ContentRuleListMatchedRule {
-    WebCore::ContentRuleListMatchedRule::Request request;
     WebCore::ContentRuleListMatchedRule::MatchedRule rule;
+    WebCore::ContentRuleListMatchedRule::Request request;
 };
 
 [Nested] struct WebCore::ContentRuleListMatchedRule::Request {
+    double frameId;
+    double parentFrameId;
+    String method;
+    String requestId;
+    double tabId;
+    String type;
+    String url;
+    std::optional<String> initiator;
     std::optional<String> documentId;
     std::optional<String> documentLifecycle;
-    std::optional<double> frameId;
     std::optional<String> frameType;
-    std::optional<String> initiator;
-    std::optional<String> method;
     std::optional<String> parentDocumentId;
-    std::optional<double> parentFrameId;
-    std::optional<String> requestId;
-    std::optional<String> type;
-    std::optional<String> url;
 };
 
 [Nested] struct WebCore::ContentRuleListMatchedRule::MatchedRule {
+    double ruleId;
+    String rulesetId;
     std::optional<String> extensionId;
-    std::optional<double> ruleId;
-    std::optional<String> rulesetId;
 };
 
 #endif
@@ -6195,9 +6181,10 @@ enum class WebCore::FrameLoadType : uint8_t {
     Reload,
     Same,
     RedirectWithLockedBackForwardList,
-    Replace,
+    MultipartReplace,
     ReloadFromOrigin,
-    ReloadExpiredOnly
+    ReloadExpiredOnly,
+    NavigationAPIReplace
 };
 
 enum class WebCore::NavigationType : uint8_t {
@@ -6620,6 +6607,8 @@ header: <WebCore/ISOVTTCue.h>
 
 [Nested] struct WebCore::MockWebAuthenticationConfiguration::HidConfiguration {
     Vector<String> payloadBase64;
+    Vector<String> expectedCommandsBase64;
+    bool validateExpectedCommands;
     WebCore::MockWebAuthenticationConfiguration::HidStage stage;
     WebCore::MockWebAuthenticationConfiguration::HidSubStage subStage;
     WebCore::MockWebAuthenticationConfiguration::HidError error;
@@ -7067,6 +7056,12 @@ header: <WebCore/TextExtractionTypes.h>
 };
 
 header: <WebCore/TextExtractionTypes.h>
+[CustomHeader] struct WebCore::TextExtraction::InteractionDescription {
+    String description;
+    Vector<String> stringsToValidate;
+};
+
+header: <WebCore/TextExtractionTypes.h>
 [CustomHeader] struct WebCore::TextExtraction::Request {
     std::optional<WebCore::FloatRect> collectionRectInRootView;
     bool mergeParagraphs;
@@ -7140,6 +7135,7 @@ header: <WebCore/TextExtractionTypes.h>
     Section,
     Nav,
     Button,
+    Canvas,
     Generic
 };
 
@@ -7236,6 +7232,8 @@ enum class WebCore::WebGPU::TextureFormat : uint8_t {
     R8snorm,
     R8uint,
     R8sint,
+    R16unorm,
+    R16snorm,
     R16uint,
     R16sint,
     R16float,
@@ -7246,6 +7244,8 @@ enum class WebCore::WebGPU::TextureFormat : uint8_t {
     R32uint,
     R32sint,
     R32float,
+    Rg16unorm,
+    Rg16snorm,
     Rg16uint,
     Rg16sint,
     Rg16float,
@@ -7263,6 +7263,8 @@ enum class WebCore::WebGPU::TextureFormat : uint8_t {
     Rg32uint,
     Rg32sint,
     Rg32float,
+    Rgba16unorm,
+    Rgba16snorm,
     Rgba16uint,
     Rgba16sint,
     Rgba16float,
@@ -7906,11 +7908,11 @@ class WebCore::FilterOperations {
 #endif // !USE(COORDINATED_GRAPHICS)
 
 [AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::Filter subclasses {
-    WebCore::CSSFilter
-    WebCore::SVGFilter
+    WebCore::CSSFilterRenderer
+    WebCore::SVGFilterRenderer
 }
 
-[AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::CSSFilter {
+[AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::CSSFilterRenderer {
     Vector<Ref<WebCore::FilterFunction>> functions();
 
     OptionSet<WebCore::FilterRenderingMode> filterRenderingModes();
@@ -7918,11 +7920,11 @@ class WebCore::FilterOperations {
     WebCore::FloatRect filterRegion();
 }
 
-[AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::SVGFilter {
+[AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::SVGFilterRenderer {
     WebCore::FloatRect targetBoundingBox();
     WebCore::SVGUnitTypes::SVGUnitType primitiveUnits();
     WebCore::SVGFilterExpression expression();
-    [Validator='WebCore::SVGFilter::isValidSVGFilterExpression(*expression, *effects)'] Vector<Ref<WebCore::FilterEffect>> effects();
+    [Validator='WebCore::SVGFilterRenderer::isValidSVGFilterExpression(*expression, *effects)'] Vector<Ref<WebCore::FilterEffect>> effects();
     std::optional<WebCore::RenderingResourceIdentifier> renderingResourceIdentifierIfExists();
 
     OptionSet<WebCore::FilterRenderingMode> filterRenderingModes();
@@ -8038,7 +8040,7 @@ enum class WebCore::PaginationMode : uint8_t {
     BottomToTopPaginated
 };
 
-header: <WebCore/RenderObject.h>
+header: <WebCore/RepaintRectCalculation.h>
 enum class WebCore::RepaintRectCalculation : bool;
 
 [Nested] enum class WebCore::HdrMetadataType : uint8_t {
@@ -8274,7 +8276,7 @@ header: <WebCore/SharedBuffer.h>
     [Validator='WebCore::FilterOperation::isBasicComponentTransferFilterOperationType(*type)'] WebCore::FilterOperation::Type type();
 };
 [CustomHeader, RefCounted] class WebCore::BlurFilterOperation {
-    WebCore::Length stdDeviation();
+    float stdDeviation();
 };
 [CustomHeader, RefCounted] class WebCore::DropShadowFilterOperation {
     WebCore::IntPoint location();
@@ -8496,7 +8498,7 @@ struct WebCore::Length {
 };
 
 [AdditionalEncoder=StreamConnectionEncoder, RefCounted] class WebCore::FilterFunction subclasses {
-    WebCore::SVGFilter
+    WebCore::SVGFilterRenderer
     WebCore::FEBlend
     WebCore::FEColorMatrix
     WebCore::FEComponentTransfer
@@ -8857,8 +8859,8 @@ header: <WebCore/FilterOperation.h>
 
 header: <WebCore/FilterFunction.h>
 [Nested] enum class WebCore::FilterFunction::Type : uint8_t {
-    CSSFilter,
-    SVGFilter,
+    CSSFilterRenderer,
+    SVGFilterRenderer,
     FEBlend,
     FEColorMatrix,
     FEComponentTransfer,
@@ -8934,11 +8936,15 @@ using WebCore::GraphicsContextGL::ExternalSyncSource = std::tuple<MachSendRight,
 #if (PLATFORM(GTK) || PLATFORM(WPE))
 header: <WebCore/GraphicsContextGL.h>
 [CustomHeader] struct WebCore::GraphicsContextGLExternalImageSource {
+#if OS(ANDROID)
+    RefPtr<AHardwareBuffer> hardwareBuffer;
+#else
     Vector<WTF::UnixFileDescriptor> fds;
     Vector<uint32_t> strides;
     Vector<uint32_t> offsets;
     uint32_t fourcc;
     uint64_t modifier;
+#endif
     WebCore::IntSize size;
 };
 using WebCore::GraphicsContextGL::ExternalImageSource = WebCore::GraphicsContextGLExternalImageSource;
@@ -9266,15 +9272,47 @@ enum class WebCore::DOMAudioSessionType : uint8_t {
 };
 #endif
 
-header: <WebCore/MediaSample.h>
-[Nested] enum class WebCore::TrackInfo::TrackType : uint8_t {
+header: <WebCore/TrackInfo.h>
+[Nested] enum class WebCore::TrackInfoTrackType : uint8_t {
     Unknown,
     Audio,
-    Video
+    Video,
+    Text
 };
 
-header: <WebCore/MediaSample.h>
-[Nested] class WebCore::MediaSamplesBlock::MediaSampleItem {
+header: <WebCore/TrackInfo.h>
+[CustomHeader, RefCounted, DisableMissingMemberCheck] struct WebCore::AudioInfo {
+    WebCore::FourCC codecName;
+    String codecString;
+    WebCore::TrackID trackID;
+    [NotSerialized] WebCore::TrackInfoTrackType m_type;
+    uint32_t rate;
+    uint32_t channels;
+    uint32_t framesPerPacket;
+    uint8_t bitDepth;
+    RefPtr<WebCore::SharedBuffer> cookieData;
+};
+
+header: <WebCore/TrackInfo.h>
+[CustomHeader, RefCounted, DisableMissingMemberCheck] struct WebCore::VideoInfo {
+    WebCore::FourCC codecName;
+    String codecString;
+    WebCore::TrackID trackID;
+    [NotSerialized] WebCore::TrackInfoTrackType m_type;
+    WebCore::FloatSize size;
+    WebCore::FloatSize displaySize;
+    uint8_t bitDepth;
+    WebCore::PlatformVideoColorSpace colorSpace;
+    String boxType;
+    RefPtr<WebCore::SharedBuffer> atomData;
+};
+
+[RefCounted, CreateUsing=fromVariant] struct WebCore::TrackInfo {
+    Variant<Ref<WebCore::AudioInfo>, Ref<WebCore::VideoInfo>> toVariant();
+};
+
+header: <WebCore/MediaSamplesBlock.h>
+[CustomHeader, Nested] class WebCore::MediaSamplesBlock::MediaSampleItem {
     MediaTime presentationTime;
     MediaTime decodeTime;
     MediaTime duration;
@@ -9284,6 +9322,12 @@ header: <WebCore/MediaSample.h>
     std::optional<WebCore::HdrMetadataType> hdrMetadataType;
     uint32_t flags;
 };
+
+class WebCore::MediaSamplesBlock {
+    RefPtr<const WebCore::TrackInfo> m_info;
+    Vector<WebCore::MediaSamplesBlock::MediaSampleItem> m_samples;
+    std::optional<bool> m_discontinuity;
+}
 
 header: <WebCore/DocumentClasses.h>
 [OptionSet, CustomHeader] enum class WebCore::DocumentClass : uint16_t {
@@ -9392,5 +9436,13 @@ struct WebCore::ParentalControlsURLFilterParameters {
 #if HAVE(WEBCONTENTRESTRICTIONS_PATH_SPI)
     String configurationPath;
 #endif
+};
+#endif
+
+#if ENABLE(IMAGE_ANALYSIS)
+header: <WebCore/ImageAnalysisQueue.h>
+[CustomHeader] struct WebCore::ImageTranslationLanguageIdentifiers {
+    String source;
+    String target;
 };
 #endif

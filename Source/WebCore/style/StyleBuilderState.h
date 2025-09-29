@@ -25,8 +25,6 @@
 
 #pragma once
 
-#include "CSSToStyleMap.h"
-#include "CascadeLevel.h"
 #include "PropertyCascade.h"
 #include "RuleSet.h"
 #include "SelectorChecker.h"
@@ -43,7 +41,6 @@
 
 namespace WebCore {
 
-class FilterOperations;
 class FontCascadeDescription;
 class FontSelectionValue;
 class RenderStyle;
@@ -52,7 +49,6 @@ class StyleResolver;
 class TextAutospace;
 class TextSpacingTrim;
 
-struct FontPalette;
 struct FontSizeAdjust;
 
 namespace CSSCalc {
@@ -60,16 +56,18 @@ struct RandomCachingKey;
 }
 
 namespace CSS {
-struct AppleColorFilterProperty;
-struct FilterProperty;
+struct AppleColorFilter;
+struct Filter;
 }
 
 namespace Style {
 
 class BuilderState;
 struct Color;
+struct FontPalette;
+struct FontWidth;
 
-void maybeUpdateFontForLetterSpacing(BuilderState&, CSSValue&);
+void maybeUpdateFontForLetterSpacingOrWordSpacing(BuilderState&, CSSValue&);
 
 enum class ApplyValueType : uint8_t { Value, Initial, Inherit };
 
@@ -121,22 +119,17 @@ public:
     ScopeOrdinal styleScopeOrdinal() const { return m_currentProperty->styleScopeOrdinal; }
 
     RefPtr<StyleImage> createStyleImage(const CSSValue&) const;
-    FilterOperations createFilterOperations(const CSS::FilterProperty&) const;
-    FilterOperations createFilterOperations(const CSSValue&) const;
-    FilterOperations createAppleColorFilterOperations(const CSS::AppleColorFilterProperty&) const;
-    FilterOperations createAppleColorFilterOperations(const CSSValue&) const;
 
     const Vector<AtomString>& registeredContentAttributes() const { return m_registeredContentAttributes; }
     void registerContentAttribute(const AtomString& attributeLocalName);
 
     const CSSToLengthConversionData& cssToLengthConversionData() const { return m_cssToLengthConversionData; }
-    CSSToStyleMap& styleMap() { return m_styleMap; }
 
     void setIsBuildingKeyframeStyle() { m_isBuildingKeyframeStyle = true; }
 
     bool isAuthorOrigin() const
     {
-        return m_currentProperty && m_currentProperty->cascadeLevel == CascadeLevel::Author;
+        return m_currentProperty && m_currentProperty->origin == PropertyCascade::Origin::Author;
     }
 
     CSSPropertyID cssPropertyID() const;
@@ -168,7 +161,7 @@ public:
     void setFontDescriptionFamilies(Vector<AtomString>&);
     void setFontDescriptionIsSpecifiedFont(bool);
     void setFontDescriptionFeatureSettings(FontFeatureSettings&&);
-    void setFontDescriptionFontPalette(const FontPalette&);
+    void setFontDescriptionFontPalette(Style::FontPalette&&);
     void setFontDescriptionFontSizeAdjust(FontSizeAdjust);
     void setFontDescriptionFontSmoothing(FontSmoothingMode);
     void setFontDescriptionFontSynthesisSmallCaps(FontSynthesisLonghandValue);
@@ -185,7 +178,7 @@ public:
     void setFontDescriptionVariantPosition(FontVariantPosition);
     void setFontDescriptionVariationSettings(FontVariationSettings&&);
     void setFontDescriptionWeight(FontSelectionValue);
-    void setFontDescriptionWidth(FontSelectionValue);
+    void setFontDescriptionWidth(FontWidth);
     void setFontDescriptionVariantAlternates(const FontVariantAlternates&);
     void setFontDescriptionVariantEastAsianVariant(FontVariantEastAsianVariant);
     void setFontDescriptionVariantEastAsianWidth(FontVariantEastAsianWidth);
@@ -201,11 +194,11 @@ public:
     void setFontDescriptionVariantNumericOrdinal(FontVariantNumericOrdinal);
     void setFontDescriptionVariantNumericSlashedZero(FontVariantNumericSlashedZero);
 
-    void disableNativeAppearanceIfNeeded(CSSPropertyID, CascadeLevel);
+    void disableNativeAppearanceIfNeeded(CSSPropertyID, PropertyCascade::Origin);
 
 private:
-    // See the comment in maybeUpdateFontForLetterSpacing() about why this needs to be a friend.
-    friend void maybeUpdateFontForLetterSpacing(BuilderState&, CSSValue&);
+    // See the comment in maybeUpdateFontForLetterSpacingOrWordSpacing() about why this needs to be a friend.
+    friend void maybeUpdateFontForLetterSpacingOrWordSpacing(BuilderState&, CSSValue&);
     friend class Builder;
 
     void adjustStyleForInterCharacterRuby();
@@ -217,8 +210,7 @@ private:
     void updateFontForZoomChange();
     void updateFontForGenericFamilyChange();
     void updateFontForOrientationChange();
-
-    CSSToStyleMap m_styleMap;
+    void updateFontForSizeChange();
 
     RenderStyle& m_style;
     BuilderContext m_context;

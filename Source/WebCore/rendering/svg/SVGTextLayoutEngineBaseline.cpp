@@ -22,11 +22,11 @@
 #include "config.h"
 #include "SVGTextLayoutEngineBaseline.h"
 
-#include "LengthFunctions.h"
+#include "NodeInlines.h"
 #include "RenderElementInlines.h"
 #include "RenderSVGInlineText.h"
+#include "RenderStyleInlines.h"
 #include "SVGLengthContext.h"
-#include "SVGRenderStyle.h"
 #include "SVGTextMetrics.h"
 
 namespace WebCore {
@@ -36,7 +36,7 @@ SVGTextLayoutEngineBaseline::SVGTextLayoutEngineBaseline(const FontCascade& font
 {
 }
 
-float SVGTextLayoutEngineBaseline::calculateBaselineShift(const SVGRenderStyle& style) const
+float SVGTextLayoutEngineBaseline::calculateBaselineShift(const RenderStyle& style) const
 {
     return WTF::switchOn(style.baselineShift(),
         [](const CSS::Keyword::Baseline&) -> float {
@@ -49,7 +49,7 @@ float SVGTextLayoutEngineBaseline::calculateBaselineShift(const SVGRenderStyle& 
             return m_font->metricsOfPrimaryFont().height() / 2;
         },
         [&](const Style::SVGBaselineShift::Length& length) -> float {
-            return Style::evaluate(length, m_font->size());
+            return Style::evaluate<float>(length, m_font->size(), Style::ZoomNeeded { });
         }
     );
 }
@@ -58,7 +58,7 @@ AlignmentBaseline SVGTextLayoutEngineBaseline::dominantBaselineToAlignmentBaseli
 {
     ASSERT(textRenderer.parent());
 
-    DominantBaseline baseline = textRenderer.style().svgStyle().dominantBaseline();
+    DominantBaseline baseline = textRenderer.style().dominantBaseline();
     if (baseline == DominantBaseline::Auto) {
         if (isVerticalText)
             baseline = DominantBaseline::Central;
@@ -101,7 +101,7 @@ float SVGTextLayoutEngineBaseline::calculateAlignmentBaselineShift(bool isVertic
     auto* textRendererParent = textRenderer.parent();
     ASSERT(textRendererParent);
 
-    AlignmentBaseline baseline = textRenderer.style().svgStyle().alignmentBaseline();
+    AlignmentBaseline baseline = textRenderer.style().alignmentBaseline();
     if (baseline == AlignmentBaseline::Baseline) {
         baseline = dominantBaselineToAlignmentBaseline(isVerticalText, *textRendererParent);
         ASSERT(baseline != AlignmentBaseline::Baseline);
@@ -138,7 +138,7 @@ float SVGTextLayoutEngineBaseline::calculateAlignmentBaselineShift(bool isVertic
     return 0;
 }
 
-float SVGTextLayoutEngineBaseline::calculateGlyphOrientationAngle(bool isVerticalText, const SVGRenderStyle& style, const char16_t& character) const
+float SVGTextLayoutEngineBaseline::calculateGlyphOrientationAngle(bool isVerticalText, const RenderStyle& style, const char16_t& character) const
 {
     switch (isVerticalText ? style.glyphOrientationVertical() : style.glyphOrientationHorizontal()) {
     case GlyphOrientation::Auto:

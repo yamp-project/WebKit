@@ -45,6 +45,8 @@
     { "name": "playstation-ews-002", "platform": "playstation" },
     { "name": "playstation-ews-003", "platform": "playstation" },
     { "name": "playstation-ews-004", "platform": "playstation" },
+    { "name": "playstation-ews-005", "platform": "playstation" },
+    { "name": "playstation-ews-006", "platform": "playstation" },
     { "name": "win-bot-001", "platform": "win" },
     { "name": "win-bot-002", "platform": "win" },
     { "name": "win-bot-003", "platform": "win" },
@@ -218,11 +220,6 @@
       "workernames": ["ews2000", "ews151", "ews253", "webkit-misc"]
     },
     {
-      "name": "Apply-WatchList-EWS", "shortname": "watchlist",
-      "factory": "WatchListFactory", "platform": "*",
-      "workernames": ["webkit-misc"]
-    },
-    {
       "name": "GTK-Build-EWS", "shortname": "gtk", "icon": "buildOnly",
       "factory": "GTKBuildFactory", "platform": "gtk",
       "configuration": "release", "architectures": ["x86_64"],
@@ -369,7 +366,7 @@
       "name": "PlayStation-Build-EWS", "shortname": "playstation", "icon": "buildOnly",
       "factory": "PlayStationBuildFactory", "configuration": "release",
       "architectures": ["x86_64"], "platform": "playstation",
-      "workernames": ["playstation-ews-001", "playstation-ews-002", "playstation-ews-003", "playstation-ews-004"]
+      "workernames": ["playstation-ews-001", "playstation-ews-002", "playstation-ews-003", "playstation-ews-004", "playstation-ews-005", "playstation-ews-006"]
     },
     {
       "name": "Win-Build-EWS", "shortname": "win", "icon": "buildOnly",
@@ -403,7 +400,7 @@
       "name": "WPE-Cairo-Build-EWS", "shortname": "wpe-cairo", "icon": "buildOnly",
       "factory": "WPECairoBuildFactory", "platform": "wpe",
       "configuration": "release", "architectures": ["x86_64"],
-      "additionalArguments": ["--cmakeargs=-DUSE_SKIA=OFF"],
+      "additionalArguments": ["--cmakeargs=-DUSE_SKIA=OFF", "--cmakeargs=-DUSE_GSTREAMER_WEBRTC=FALSE"],
       "workernames": ["igalia16-wpe-ews", "igalia17-wpe-ews", "igalia18-wpe-ews", "igalia19-wpe-ews"]
     },
     {
@@ -450,6 +447,7 @@
       "name": "API-Tests-iOS-Simulator-EWS", "shortname": "api-ios", "icon": "testOnly",
       "factory": "APITestsFactory", "platform": "*",
       "triggered_by": ["ios-18-sim-build-ews"],
+      "additionalArguments": ["--child-processes=3"],
       "workernames": ["ews156", "ews157", "ews158", "ews159", "ews160", "ews183", "ews254", "ews255", "ews256", "ews257", "ews258", "ews259"]
     },
     {
@@ -505,7 +503,7 @@
     {
       "type": "Try_Userpass", "name": "try", "port": 5555,
       "builderNames": [
-            "Apply-WatchList-EWS", "Bindings-Tests-EWS", "GTK-Build-EWS", "iOS-18-Build-EWS", "iOS-18-Simulator-Build-EWS",
+            "Bindings-Tests-EWS", "GTK-Build-EWS", "iOS-18-Build-EWS", "iOS-18-Simulator-Build-EWS",
             "JSC-ARMv7-32bits-Build-EWS", "JSC-Tests-EWS", "JSC-Tests-arm64-EWS",
             "macOS-Sequoia-Debug-Build-EWS", "macOS-Sonoma-Release-Build-EWS", "macOS-Safer-CPP-Checks-EWS",
             "Services-EWS", "Style-EWS", "tvOS-18-Build-EWS", "tvOS-18-Simulator-Build-EWS", "visionOS-2-Build-EWS", "visionOS-2-Simulator-Build-EWS",

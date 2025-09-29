@@ -146,6 +146,11 @@ void MediaRecorder::stop()
     stopRecordingInternal();
 }
 
+ScriptExecutionContext* MediaRecorder::scriptExecutionContext() const
+{
+    return ActiveDOMObject::scriptExecutionContext();
+}
+
 void MediaRecorder::suspend(ReasonForSuspension reason)
 {
     if (reason != ReasonForSuspension::BackForwardCache)
@@ -378,6 +383,9 @@ void MediaRecorder::stopRecordingInternal(CompletionHandler<void()>&& completion
 void MediaRecorder::handleTrackChange()
 {
     queueTaskKeepingObjectAlive(*this, TaskSource::Networking, [](auto& recorder) {
+        if (recorder.state() == RecordingState::Inactive)
+            return;
+
         recorder.stopRecordingInternal([pendingActivity = recorder.makePendingActivity(recorder)] {
             Ref protectedRecorder = pendingActivity->object();
             queueTaskKeepingObjectAlive(protectedRecorder.get(), TaskSource::Networking, [](auto& recorder) {
@@ -413,6 +421,9 @@ void MediaRecorder::trackEnded(MediaStreamTrackPrivate&)
         return;
 
     queueTaskKeepingObjectAlive(*this, TaskSource::Networking, [](auto& recorder) {
+        if (recorder.state() == RecordingState::Inactive)
+            return;
+
         recorder.stopRecordingInternal([pendingActivity = recorder.makePendingActivity(recorder)] {
             queueTaskKeepingObjectAlive(pendingActivity->object(), TaskSource::Networking, [](auto& recorder) {
                 if (!recorder.m_isActive)

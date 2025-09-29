@@ -630,12 +630,12 @@ template<typename... Ts> struct HoldsAlternative<Variant<Ts...>> {
     }
 };
 
-template<typename T, typename V> bool holdsAlternative(const V& v)
+template<typename T, typename V> constexpr bool holdsAlternative(const V& v)
 {
     return HoldsAlternative<V>::template holdsAlternative<T>(v);
 }
 
-template<size_t I, typename V> bool holdsAlternative(const V& v)
+template<size_t I, typename V> constexpr bool holdsAlternative(const V& v)
 {
     return HoldsAlternative<V>::template holdsAlternative<I>(v);
 }
@@ -1224,7 +1224,7 @@ template <class T> inline typename std::enable_if<std::is_pointer<T>::value, T>:
 
 #define SAFE_SPRINTF(destinationSpan, format, ...) \
     WTF_ALLOW_UNSAFE_BUFFER_USAGE_BEGIN \
-    snprintf(destinationSpan.data(), destinationSpan.size_bytes(), format, SAFE_PRINTF_TYPE(__VA_ARGS__)) \
+    snprintf(destinationSpan.data(), destinationSpan.size_bytes(), format __VA_OPT__(, SAFE_PRINTF_TYPE(__VA_ARGS__))) \
     WTF_ALLOW_UNSAFE_BUFFER_USAGE_END
 
 template<typename T> concept ByteType = sizeof(T) == 1 && ((std::is_integral_v<T> && !std::same_as<T, bool>) || std::same_as<T, std::byte>) && !std::is_const_v<T>;

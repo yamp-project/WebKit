@@ -61,9 +61,9 @@
 #import "WKContentView.h"
 #import "WKContentViewInteraction.h"
 #import "WKFullScreenWindowControllerIOS.h"
+#import <WebCore/BoxExtents.h>
 #import <WebCore/FloatRect.h>
 #import <WebCore/IntDegrees.h>
-#import <WebCore/LengthBox.h>
 #import <WebCore/PlatformLayerIdentifier.h>
 #import <WebCore/ViewportArguments.h>
 #endif
@@ -149,11 +149,13 @@ enum class HideScrollPocketReason : uint8_t {
 };
 }
 
+@class NSScrollPocket;
 @class WKColorExtensionView;
 @class WKContentView;
 @class WKPasswordView;
 @class WKScrollGeometry;
 @class WKScrollView;
+@class WKTextExtractionInteraction;
 @class WKWebViewContentProviderRegistry;
 @class _WKFrameHandle;
 @class _WKWarningView;
@@ -269,8 +271,8 @@ struct PerWebProcessState {
 
     const std::unique_ptr<WebKit::NavigationState> _navigationState;
     const std::unique_ptr<WebKit::UIDelegate> _uiDelegate;
-    std::unique_ptr<WebKit::IconLoadingDelegate> _iconLoadingDelegate;
-    std::unique_ptr<WebKit::ResourceLoadDelegate> _resourceLoadDelegate;
+    const std::unique_ptr<WebKit::IconLoadingDelegate> _iconLoadingDelegate;
+    const std::unique_ptr<WebKit::ResourceLoadDelegate> _resourceLoadDelegate;
 
     WeakObjCPtr<id <_WKTextManipulationDelegate>> _textManipulationDelegate;
     WeakObjCPtr<id <_WKInputDelegate>> _inputDelegate;
@@ -314,7 +316,7 @@ struct PerWebProcessState {
 #endif
 
 #if PLATFORM(MAC)
-    std::unique_ptr<WebKit::WebViewImpl> _impl;
+    const std::unique_ptr<WebKit::WebViewImpl> _impl;
     RetainPtr<WKTextFinderClient> _textFinderClient;
 #if HAVE(NSWINDOW_SNAPSHOT_READINESS_HANDLER)
     BlockPtr<void()> _windowSnapshotReadinessHandler;
@@ -560,6 +562,7 @@ struct PerWebProcessState {
 
 #if PLATFORM(MAC) && ENABLE(CONTENT_INSET_BACKGROUND_FILL)
 - (NSColor *)_adjustedColorForTopContentInsetColorFromUIDelegate:(NSColor *)proposedColor;
+@property (nonatomic, readonly) RetainPtr<NSScrollPocket> _copyTopScrollPocket;
 @property (nonatomic, setter=_setAlwaysPrefersSolidColorHardPocket:) BOOL _alwaysPrefersSolidColorHardPocket;
 #endif
 
@@ -648,5 +651,6 @@ WebCore::CocoaColor *sampledFixedPositionContentColor(const WebCore::FixedContai
 - (void)_scrollToEdge:(_WKRectEdge)edge animated:(BOOL)animated;
 
 - (void)_requestTextExtraction:(_WKTextExtractionConfiguration *)configuration completionHandler:(void (^)(WKTextExtractionResult *))completionHandler;
+- (void)_describeInteraction:(_WKTextExtractionInteraction *)interaction completionHandler:(void (^)(NSString *, NSError *))completionHandler;
 
 @end

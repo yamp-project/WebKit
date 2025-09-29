@@ -32,11 +32,11 @@
 #include "AXIsolatedTree.h"
 #include "AXLogger.h"
 #include "AXLoggerBase.h"
-#include "AXObjectCache.h"
 #include "AXObjectCacheInlines.h"
 #include "AXSearchManager.h"
 #include "AXTextMarker.h"
 #include "AXTextRun.h"
+#include "AXUtilities.h"
 #include "AccessibilityNodeObject.h"
 #include "DateComponents.h"
 #include "HTMLNames.h"
@@ -77,11 +77,31 @@ AXIsolatedObject::~AXIsolatedObject()
     AX_BROKEN_ASSERT(!wrapper());
 }
 
+void AXIsolatedObject::updateFromData(IsolatedObjectData&& data)
+{
+    ASSERT(!isMainThread());
+
+    if (data.axID != objectID() || data.tree->treeID() != treeID()) {
+        // Our data should only be updated from the same main-thread equivalent object.
+        ASSERT_NOT_REACHED();
+        return;
+    }
+
+    m_role = data.role;
+    m_parentID = data.parentID;
+    m_unresolvedChildrenIDs = WTFMove(data.childrenIDs);
+    m_childrenDirty = true;
+    m_getsGeometryFromChildren = data.getsGeometryFromChildren;
+
+    m_properties = WTFMove(data.properties);
+    m_propertyFlags = data.propertyFlags;
+}
+
 String AXIsolatedObject::debugDescriptionInternal(bool verbose, std::optional<OptionSet<AXDebugStringOption>> debugOptions) const
 {
     StringBuilder result;
     result.append("{"_s);
-    result.append("role: "_s, accessibilityRoleToString(role()));
+    result.append("role: "_s, roleToString(role()));
     result.append(", ID "_s, objectID().loggingString());
 
     if (debugOptions) {
@@ -375,11 +395,6 @@ std::optional<AXCoreObject::AccessibilityChildrenVector> AXIsolatedObject::mathR
         return { radicand };
     }
     return std::nullopt;
-}
-
-AXIsolatedObject* AXIsolatedObject::focusedUIElement() const
-{
-    return tree()->focusedNode().get();
 }
 
 AXIsolatedObject* AXIsolatedObject::scrollBar(AccessibilityOrientation orientation)
@@ -1095,10 +1110,10 @@ FloatRect AXIsolatedObject::relativeFrame() const
         if (rectFromLabels && !rectFromLabels->isEmpty())
             relativeFrame = *rectFromLabels;
         else {
-            // InitialFrameRect stores the correct size, but not position, of the element before it is painted.
+            // InitialLocalRect stores the correct size, but not position, of the element before it is painted.
             // We find the position of the nearest painted ancestor to use as the position until the object's frame
             // is cached during painting.
-            relativeFrame = rectAttributeValue<FloatRect>(AXProperty::InitialFrameRect);
+            relativeFrame = rectAttributeValue<FloatRect>(AXProperty::InitialLocalRect);
 
             std::optional<IntRect> ancestorRelativeFrame;
             Accessibility::findAncestor<AXIsolatedObject>(*this, false, [&] (const auto& object) {
@@ -1190,6 +1205,12 @@ void AXIsolatedObject::decrement()
     performFunctionOnMainThread([] (auto* axObject) {
         axObject->decrement();
     });
+}
+
+bool AXIsolatedObject::isAccessibilityNodeObject() const
+{
+    ASSERT_NOT_REACHED();
+    return false;
 }
 
 bool AXIsolatedObject::isAccessibilityRenderObject() const
@@ -1590,6 +1611,57 @@ String AXIsolatedObject::linkRelValue() const
     });
 }
 
+#if ENABLE_ACCESSIBILITY_LOCAL_FRAME
+
+AXIsolatedObject* AXIsolatedObject::crossFrameParentObject() const
+{
+    if (role() != AccessibilityRole::ScrollArea)
+        return nullptr;
+
+    auto parentFrameID = optionalAttributeValue<FrameIdentifier>(AXProperty::CrossFrameParentFrameID);
+    if (!parentFrameID)
+        return nullptr;
+
+    auto optionalParentObjectID = optionalAttributeValue<Markable<AXID>>(AXProperty::CrossFrameParentAXID);
+
+    // TODO: add helpers to retrieve an AXID directly to clean this up.
+    if (!optionalParentObjectID)
+        return nullptr;
+
+    auto markableParentObjectID = *optionalParentObjectID;
+    if (!markableParentObjectID)
+        return nullptr;
+
+    auto parentObjectID = *markableParentObjectID;
+
+    RefPtr parentTree = AXIsolatedTree::treeForFrameIDAlreadyLocked(*parentFrameID);
+    if (!parentTree)
+        return nullptr;
+
+    return parentTree->objectForID(parentObjectID);
+}
+
+AXIsolatedObject* AXIsolatedObject::crossFrameChildObject() const
+{
+    if (role() != AccessibilityRole::LocalFrame)
+        return nullptr;
+
+    auto frameID = optionalAttributeValue<FrameIdentifier>(AXProperty::CrossFrameChildFrameID);
+    if (!frameID)
+        return nullptr;
+
+    RefPtr<AXIsolatedTree> childTree;
+    childTree = AXIsolatedTree::treeForFrameIDAlreadyLocked(*frameID);
+    if (!childTree)
+        return nullptr;
+
+    childTree->applyPendingChanges();
+
+    return childTree->rootNode();
+}
+
+#endif // ENABLE_ACCESSIBILITY_LOCAL_FRAME
+
 Element* AXIsolatedObject::element() const
 {
     ASSERT_NOT_REACHED();
@@ -1630,6 +1702,30 @@ bool AXIsolatedObject::isTableCell() const
 {
     ASSERT_NOT_REACHED();
     return false;
+}
+
+AXCoreObject* AXIsolatedObject::parentTableIfTableCell() const
+{
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
+AXCoreObject* AXIsolatedObject::parentTable() const
+{
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
+bool AXIsolatedObject::isTableRow() const
+{
+    ASSERT_NOT_REACHED();
+    return false;
+}
+
+AXCoreObject* AXIsolatedObject::parentTableIfExposedTableRow() const
+{
+    ASSERT_NOT_REACHED();
+    return nullptr;
 }
 
 bool AXIsolatedObject::isDescendantOfRole(AccessibilityRole) const

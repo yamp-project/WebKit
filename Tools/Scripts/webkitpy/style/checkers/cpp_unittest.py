@@ -1886,10 +1886,10 @@ class CppStyleTest(CppStyleTestBase):
         self.assert_lint(
             '''\
             globalQueue = dispatch_queue_create("My Serial Queue", DISPATCH_QUEUE_SERIAL);
-            dispatch_set_target_queue(globalQueue, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));''',
+            dispatch_set_target_queue(globalQueue, globalDispatchQueueSingleton(DISPATCH_QUEUE_PRIORITY_HIGH, 0));''',
             'Never use dispatch_set_target_queue.  Use dispatch_queue_create_with_target instead.'
             '  [runtime/dispatch_set_target_queue] [5]')
-        self.assert_lint('globalQueue = dispatch_queue_create_with_target("My Serial Queue", DISPATCH_QUEUE_SERIAL, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));', '')
+        self.assert_lint('globalQueue = dispatch_queue_create_with_target("My Serial Queue", DISPATCH_QUEUE_SERIAL, globalDispatchQueueSingleton(DISPATCH_QUEUE_PRIORITY_HIGH, 0));', '')
 
     def test_retainptr_pointer(self):
         self.assert_lint(
@@ -2365,7 +2365,7 @@ class CppStyleTest(CppStyleTestBase):
         self.assert_lint('for{', 'Missing space before {'
                          '  [whitespace/braces] [5]')
         self.assert_lint('for {', '')
-        self.assert_lint('dispatch_async(dispatch_get_main_queue(), ^{', '')
+        self.assert_lint('dispatch_async(mainDispatchQueueSingleton(), ^{', '')
         self.assert_lint('[outOfBandTracks.get() addObject:@{', '')
         self.assert_lint('EXPECT_DEBUG_DEATH({', '')
         self.assert_lint('LOCAL_LOG(R"({ "url": "%{public}s",)", url.string().utf8().data());', '')
@@ -3115,15 +3115,15 @@ class CppStyleTest(CppStyleTestBase):
                       % (code, result, expected_message))
 
     def test_build_storage_class(self):
-        qualifiers = [None, 'const', 'volatile']
+        qualifiers = [None, 'const', 'constexpr', 'volatile']
         signs = [None, 'signed', 'unsigned']
-        types = ['void', 'char', 'int', 'float', 'double',
+        types = ['void', 'char', 'float', 'double',
                  'schar', 'int8', 'uint8', 'int16', 'uint16',
                  'int32', 'uint32', 'int64', 'uint64']
-        storage_classes = ['auto', 'extern', 'register', 'static', 'typedef']
+        storage_classes = ['static', 'extern', 'typedef', 'register']
 
         build_storage_class_error_message = (
-            'Storage class (static, extern, typedef, etc) should be first.'
+            'Storage class (static, extern, typedef, register) should be first.'
             '  [build/storage_class] [5]')
 
         # Some explicit cases. Legal in C++, deprecated in C99.

@@ -41,6 +41,7 @@
 #include <WebCore/ScriptExecutionContextIdentifier.h>
 #include <WebCore/ScriptTrackingPrivacyCategory.h>
 #include <WebCore/ScrollTypes.h>
+#include <WebCore/SimpleRange.h>
 #include <WebCore/Supplementable.h>
 #include <WebCore/Timer.h>
 #include <WebCore/UserInterfaceLayoutDirection.h>
@@ -102,7 +103,6 @@ class ApplePayAMSUIPaymentHandler;
 class ActivityStateChangeObserver;
 class AlternativeTextClient;
 class AnimationTimelinesController;
-class ApplicationCacheStorage;
 class AttachmentElementClient;
 class AuthenticatorCoordinator;
 class BackForwardController;
@@ -153,7 +153,6 @@ class MediaSessionCoordinatorPrivate;
 class MediaSessionManagerInterface;
 class ModelPlayerProvider;
 class PageConfiguration;
-class PageConsoleClient;
 class PageDebuggable;
 class PageGroup;
 class PageOverlayController;
@@ -186,6 +185,7 @@ class StorageConnection;
 class StorageNamespace;
 class StorageNamespaceProvider;
 class StorageProvider;
+class StringCallback;
 class TextIndicator;
 class ThermalMitigationNotifier;
 class UserContentProvider;
@@ -230,7 +230,6 @@ struct ClientOrigin;
 struct FixedContainerEdges;
 struct NavigationAPIMethodTracker;
 struct ProcessSyncData;
-struct SimpleRange;
 struct SpatialBackdropSource;
 struct SystemPreviewInfo;
 struct TextRecognitionResult;
@@ -286,38 +285,46 @@ enum class FinalizeRenderingUpdateFlags : uint8_t {
     InvalidateImagesWithAsyncDecodes    = 1 << 1,
 };
 
+enum class WebContentProcessVariant : uint8_t {
+    Standard,
+    Lockdown,
+    Security
+};
+
 enum class RenderingUpdateStep : uint32_t {
-    Reveal                          = 1 << 0,
-    Resize                          = 1 << 1,
-    Scroll                          = 1 << 2,
-    MediaQueryEvaluation            = 1 << 3,
-    Animations                      = 1 << 4,
-    Fullscreen                      = 1 << 5,
-    AnimationFrameCallbacks         = 1 << 6,
-    UpdateContentRelevancy          = 1 << 7,
-    PerformPendingViewTransitions   = 1 << 8,
-    IntersectionObservations        = 1 << 9,
-    ResizeObservations              = 1 << 10,
-    Images                          = 1 << 11,
-    WheelEventMonitorCallbacks      = 1 << 12,
-    CursorUpdate                    = 1 << 13,
-    EventRegionUpdate               = 1 << 14,
-    LayerFlush                      = 1 << 15,
+    Reveal                              = 1 << 0,
+    Resize                              = 1 << 1,
+    Scroll                              = 1 << 2,
+    MediaQueryEvaluation                = 1 << 3,
+    Animations                          = 1 << 4,
+    Fullscreen                          = 1 << 5,
+    AnimationFrameCallbacks             = 1 << 6,
+    UpdateContentRelevancy              = 1 << 7,
+    PerformPendingViewTransitions       = 1 << 8,
+    IntersectionObservations            = 1 << 9,
+    ResizeObservations                  = 1 << 10,
+    PaintTiming                         = 1 << 11,
+    EventTiming                         = 1 << 12,
+    Images                              = 1 << 13,
+    WheelEventMonitorCallbacks          = 1 << 14,
+    CursorUpdate                        = 1 << 15,
+    EventRegionUpdate                   = 1 << 16,
+    LayerFlush                          = 1 << 17,
 #if ENABLE(ASYNC_SCROLLING)
-    ScrollingTreeUpdate             = 1 << 16,
+    ScrollingTreeUpdate                 = 1 << 18,
 #endif
-    FlushAutofocusCandidates        = 1 << 17,
-    VideoFrameCallbacks             = 1 << 18,
-    PrepareCanvasesForDisplayOrFlush = 1 << 19,
-    CaretAnimation                  = 1 << 20,
-    FocusFixup                      = 1 << 21,
-    UpdateValidationMessagePositions= 1 << 22,
+    FlushAutofocusCandidates            = 1 << 19,
+    VideoFrameCallbacks                 = 1 << 20,
+    PrepareCanvasesForDisplayOrFlush    = 1 << 21,
+    CaretAnimation                      = 1 << 22,
+    FocusFixup                          = 1 << 23,
+    UpdateValidationMessagePositions    = 1 << 25,
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
-    AccessibilityRegionUpdate       = 1 << 23,
+    AccessibilityRegionUpdate           = 1 << 26,
 #endif
-    RestoreScrollPositionAndViewState = 1 << 24,
-    AdjustVisibility                  = 1 << 25,
-    SnapshottedScrollOffsets          = 1 << 26,
+    RestoreScrollPositionAndViewState   = 1 << 27,
+    AdjustVisibility                    = 1 << 28,
+    SnapshottedScrollOffsets            = 1 << 29,
 
 };
 
@@ -342,6 +349,8 @@ constexpr OptionSet<RenderingUpdateStep> updateRenderingSteps = {
     RenderingUpdateStep::AnimationFrameCallbacks,
     RenderingUpdateStep::IntersectionObservations,
     RenderingUpdateStep::ResizeObservations,
+    RenderingUpdateStep::PaintTiming,
+    RenderingUpdateStep::EventTiming,
     RenderingUpdateStep::Images,
     RenderingUpdateStep::WheelEventMonitorCallbacks,
     RenderingUpdateStep::CursorUpdate,
@@ -374,6 +383,7 @@ public:
     WEBCORE_EXPORT static Ref<Page> create(PageConfiguration&&);
     WEBCORE_EXPORT ~Page();
 
+    static void updateControlTintsForAllPages();
     WEBCORE_EXPORT static void updateStyleForAllPagesAfterGlobalChangeInEnvironment();
     WEBCORE_EXPORT static void clearPreviousItemFromAllPages(BackForwardItemIdentifier);
 
@@ -421,6 +431,7 @@ public:
     WEBCORE_EXPORT void setMainFrame(Ref<Frame>&&);
     WEBCORE_EXPORT const URL& mainFrameURL() const;
     SecurityOrigin& mainFrameOrigin() const;
+    Ref<SecurityOrigin> protectedMainFrameOrigin() const;
 
     WEBCORE_EXPORT void setMainFrameURLAndOrigin(const URL&, RefPtr<SecurityOrigin>&&);
 #if ENABLE(DOM_AUDIO_SESSION)
@@ -465,6 +476,7 @@ public:
 
     WEBCORE_EXPORT static void forEachPage(NOESCAPE const Function<void(Page&)>&);
     WEBCORE_EXPORT static unsigned nonUtilityPageCount();
+    static Page* fromPageIdentifier(PageIdentifier);
 
     unsigned subframeCount() const;
 
@@ -533,6 +545,9 @@ public:
     WEBCORE_EXPORT Ref<DOMRectList> touchEventRectsForEventForTesting(EventTrackingRegionsEventType);
     WEBCORE_EXPORT Ref<DOMRectList> passiveTouchEventListenerRectsForTesting();
 
+    WEBCORE_EXPORT void setConsoleMessageListenerForTesting(RefPtr<StringCallback>&&);
+    WEBCORE_EXPORT RefPtr<StringCallback> consoleMessageListenerForTesting() const;
+
     WEBCORE_EXPORT void settingsDidChange();
 
     Settings& settings() const { return *m_settings; }
@@ -554,7 +569,11 @@ public:
     void setTabKeyCyclesThroughElements(bool b) { m_tabKeyCyclesThroughElements = b; }
     bool tabKeyCyclesThroughElements() const { return m_tabKeyCyclesThroughElements; }
 
-    WEBCORE_EXPORT std::optional<FrameIdentifier> findString(const String&, FindOptions, DidWrap* = nullptr);
+    struct FindStringData {
+        std::optional<FrameIdentifier> frameIdentifier;
+        std::optional<SimpleRange> range;
+    };
+    WEBCORE_EXPORT FindStringData findString(const String&, FindOptions, DidWrap* = nullptr);
     WEBCORE_EXPORT uint32_t replaceRangesWithText(const Vector<SimpleRange>& rangesToReplace, const String& replacementText, bool selectionOnly);
     WEBCORE_EXPORT uint32_t replaceSelectionWithText(const String& replacementText);
 
@@ -708,7 +727,7 @@ public:
     WEBCORE_EXPORT void appearanceDidChange();
 
     void clearAXObjectCache();
-    AXObjectCache* existingAXObjectCache() { return m_axObjectCache.get(); }
+    AXObjectCache* existingAXObjectCache();
     WEBCORE_EXPORT AXObjectCache* axObjectCache();
 
     // Page and FrameView both store a Pagination value. Page::pagination() is set only by API,
@@ -964,9 +983,6 @@ public:
     void sawMediaEngine(const String& engineName);
     void resetSeenMediaEngines();
 
-    PageConsoleClient& console() { return m_consoleClient.get(); }
-    const PageConsoleClient& console() const { return m_consoleClient.get(); }
-
 #if ENABLE(REMOTE_INSPECTOR)
     PageDebuggable& inspectorDebuggable() { return m_inspectorDebuggable.get(); }
     const PageDebuggable& inspectorDebuggable() const { return m_inspectorDebuggable.get(); }
@@ -991,7 +1007,6 @@ public:
     void setLastSpatialNavigationCandidateCount(unsigned count) { m_lastSpatialNavigationCandidatesCount = count; }
     unsigned lastSpatialNavigationCandidateCount() const { return m_lastSpatialNavigationCandidatesCount; }
 
-    ApplicationCacheStorage* applicationCacheStorage() { return m_applicationCacheStorage.get(); }
     DatabaseProvider& databaseProvider() { return m_databaseProvider; }
     CacheStorageProvider& cacheStorageProvider() { return m_cacheStorageProvider; }
     SocketProvider& socketProvider() { return m_socketProvider; }
@@ -1004,9 +1019,8 @@ public:
     PluginInfoProvider& pluginInfoProvider();
     Ref<PluginInfoProvider> protectedPluginInfoProvider() const;
 
-    WEBCORE_EXPORT UserContentProvider& userContentProvider();
-    WEBCORE_EXPORT Ref<UserContentProvider> protectedUserContentProvider();
-    WEBCORE_EXPORT void setUserContentProvider(Ref<UserContentProvider>&&);
+    WEBCORE_EXPORT Ref<UserContentProvider> protectedUserContentProviderForFrame();
+    WEBCORE_EXPORT void setUserContentProviderForWebKitLegacy(Ref<UserContentProvider>&&);
 
     ScreenOrientationManager* screenOrientationManager() const;
 
@@ -1352,9 +1366,9 @@ public:
 
     WEBCORE_EXPORT RefPtr<HTMLMediaElement> bestMediaElementForRemoteControls(PlatformMediaSessionPlaybackControlsPurpose, Document*);
 
-    WEBCORE_EXPORT MediaSessionManagerInterface& mediaSessionManager();
+    WEBCORE_EXPORT RefPtr<MediaSessionManagerInterface> mediaSessionManager();
     WEBCORE_EXPORT MediaSessionManagerInterface* mediaSessionManagerIfExists() const;
-    WEBCORE_EXPORT static MediaSessionManagerInterface* mediaSessionManagerForPageIdentifier(PageIdentifier);
+    WEBCORE_EXPORT static RefPtr<MediaSessionManagerInterface> mediaSessionManagerForPageIdentifier(PageIdentifier);
 
 #if ENABLE(MODEL_ELEMENT)
     bool shouldDisableModelLoadDelaysForTesting() const { return m_modelLoadDelaysDisabledForTesting; }
@@ -1371,6 +1385,13 @@ public:
     void updateDisplayEDRHeadroom();
     void updateDisplayEDRSuppression();
 #endif
+
+    // Checking hardware keyboard attached
+    void setHardwareKeyboardAttached(bool attached) { m_hardwareKeyboardAttached = attached; }
+    bool hardwareKeyboardAttached() const { return m_hardwareKeyboardAttached; }
+
+    void setWebContentProcessVariant(WebContentProcessVariant variant) { m_webContentProcessVariant = variant; };
+    WebContentProcessVariant webContentProcessVariant() const { return m_webContentProcessVariant; };
 
 private:
     explicit Page(PageConfiguration&&);
@@ -1423,6 +1444,7 @@ private:
     void prioritizeVisibleResources();
 
     RenderingUpdateScheduler& renderingUpdateScheduler();
+    CheckedRef<RenderingUpdateScheduler> checkedRenderingUpdateScheduler();
     RenderingUpdateScheduler* existingRenderingUpdateScheduler();
 
     WheelEventTestMonitor& ensureWheelEventTestMonitor();
@@ -1445,6 +1467,8 @@ private:
     void clearSampledPageTopColor();
 
     bool hasLocalMainFrame();
+
+    void updateControlTints();
 
     struct Internals;
     const UniqueRef<Internals> m_internals;
@@ -1565,7 +1589,6 @@ private:
 #if ENABLE(ACCESSIBILITY_NON_BLINKING_CURSOR)
     bool m_prefersNonBlinkingCursor { false };
 #endif
-    std::unique_ptr<AXObjectCache> m_axObjectCache;
 
     TimerThrottlingState m_timerThrottlingState { TimerThrottlingState::Disabled };
     MonotonicTime m_timerThrottlingStateLastChangedTime;
@@ -1592,7 +1615,6 @@ private:
     std::unique_ptr<AlternativeTextClient> m_alternativeTextClient;
 
     bool m_scriptedAnimationsSuspended { false };
-    const UniqueRef<PageConsoleClient> m_consoleClient;
 
 #if ENABLE(REMOTE_INSPECTOR)
     const Ref<PageDebuggable> m_inspectorDebuggable;
@@ -1609,7 +1631,6 @@ private:
 
     const Ref<SocketProvider> m_socketProvider;
     const Ref<CookieJar> m_cookieJar;
-    RefPtr<ApplicationCacheStorage> m_applicationCacheStorage;
     const Ref<CacheStorageProvider> m_cacheStorageProvider;
     const Ref<DatabaseProvider> m_databaseProvider;
     const Ref<PluginInfoProvider> m_pluginInfoProvider;
@@ -1750,6 +1771,8 @@ private:
 
     std::optional<std::pair<uint16_t, uint16_t>> m_portsForUpgradingInsecureSchemeForTesting;
 
+    RefPtr<StringCallback> m_consoleMessageListenerForTesting;
+
     const UniqueRef<StorageProvider> m_storageProvider;
     const Ref<ModelPlayerProvider> m_modelPlayerProvider;
 
@@ -1830,13 +1853,21 @@ private:
     String m_presentingApplicationBundleIdentifier;
 #endif
 
-    using MediaSessionManagerFactory = Function<RefPtr<MediaSessionManagerInterface> (std::optional<PageIdentifier>)>;
+    using MediaSessionManagerFactory = Function<RefPtr<MediaSessionManagerInterface> (PageIdentifier)>;
     std::optional<MediaSessionManagerFactory> m_mediaSessionManagerFactory;
     RefPtr<MediaSessionManagerInterface> m_mediaSessionManager;
 
 #if ENABLE(MODEL_ELEMENT)
     bool m_modelLoadDelaysDisabledForTesting { false };
 #endif
+
+    // Checking hardware keyboard attached
+#if PLATFORM(IOS_FAMILY)
+    bool m_hardwareKeyboardAttached { false };
+#else
+    bool m_hardwareKeyboardAttached { true };
+#endif
+    WebContentProcessVariant m_webContentProcessVariant { WebContentProcessVariant::Standard };
 }; // class Page
 
 WTF::TextStream& operator<<(WTF::TextStream&, RenderingUpdateStep);

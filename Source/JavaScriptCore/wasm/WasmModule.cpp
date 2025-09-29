@@ -28,7 +28,11 @@
 
 #if ENABLE(WEBASSEMBLY)
 
+#include "JSWebAssemblyInstance.h"
+#include "WasmDebugServer.h"
 #include "WasmIPIntPlan.h"
+#include "WasmInstanceAnchor.h"
+#include "WasmMergedProfile.h"
 #include "WasmModuleInformation.h"
 #include "WasmWorklist.h"
 
@@ -41,9 +45,15 @@ Module::Module(IPIntPlan& plan)
     , m_ipintCallees(IPIntCallees::createFromVector(plan.takeCallees()))
     , m_wasmToJSExitStubs(plan.takeWasmToJSExitStubs())
 {
+    if (Options::enableWasmDebugger()) [[unlikely]]
+        Wasm::DebugServer::singleton().trackModule(*this);
 }
 
-Module::~Module() = default;
+Module::~Module()
+{
+    if (Options::enableWasmDebugger()) [[unlikely]]
+        Wasm::DebugServer::singleton().untrackModule(*this);
+}
 
 Wasm::TypeIndex Module::typeIndexFromFunctionIndexSpace(FunctionSpaceIndex functionIndexSpace) const
 {
@@ -128,6 +138,39 @@ void Module::copyInitialCalleeGroupToAllMemoryModes(MemoryMode initialMode)
             group = CalleeGroup::createFromExisting(static_cast<MemoryMode>(i), initialBlock);
     }
 }
+
+
+Ref<Wasm::InstanceAnchor> Module::registerAnchor(JSWebAssemblyInstance* instance)
+{
+    auto anchor = Wasm::InstanceAnchor::create(*this, instance);
+    WTF::storeStoreFence();
+    m_anchors.add(anchor.get());
+    return anchor;
+}
+
+std::unique_ptr<MergedProfile> Module::createMergedProfile(IPIntCallee& callee)
+{
+    auto result = makeUnique<MergedProfile>(callee);
+    for (Ref anchor : m_anchors) {
+        RefPtr<BaselineData> data;
+        {
+            Locker locker { anchor->m_lock };
+            if (JSWebAssemblyInstance* instance = anchor->instance())
+                data = instance->baselineData(callee.functionIndex());
+        }
+        if (!data)
+            continue;
+
+        auto span = result->mutableSpan();
+        RELEASE_ASSERT(data->size() == result->mutableSpan().size());
+        for (unsigned i = 0; i < data->size(); ++i)
+            span[i].merge(data->at(i));
+    }
+    return result;
+}
+
+uint32_t Module::debugId() const { return m_moduleInformation->debugInfo->id; }
+void Module::setDebugId(uint32_t id) { m_moduleInformation->debugInfo->id = id; }
 
 } } // namespace JSC::Wasm
 

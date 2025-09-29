@@ -191,6 +191,7 @@ void Frame::takeWindowProxyAndOpenerFrom(Frame& frame)
         opened->m_opener = *this;
         m_openedFrames.add(opened);
     }
+    frame.m_openedFrames.clear();
 }
 
 Ref<WindowProxy> Frame::protectedWindowProxy() const
@@ -333,6 +334,18 @@ bool Frame::frameCanCreatePaymentSession() const
     // Prefer the LocalFrame code path when site isolation is disabled.
     ASSERT(m_settings->siteIsolationEnabled());
     return m_frameTreeSyncData->frameCanCreatePaymentSession;
+}
+
+bool Frame::isPrinting() const
+{
+    return m_isPrinting;
+}
+
+void Frame::setPrinting(bool printing, FloatSize pageSize, FloatSize originalPageSize, float maximumShrinkRatio, AdjustViewSize shouldAdjustViewSize, NotifyUIProcess notifyUIProcess)
+{
+    m_isPrinting = printing;
+    if (notifyUIProcess == NotifyUIProcess::Yes && m_settings->siteIsolationEnabled())
+        loaderClient().setPrinting(printing, pageSize, originalPageSize, maximumShrinkRatio, shouldAdjustViewSize);
 }
 
 } // namespace WebCore

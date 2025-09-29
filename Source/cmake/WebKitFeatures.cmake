@@ -219,6 +219,7 @@ macro(WEBKIT_OPTION_BEGIN)
     WEBKIT_OPTION_DEFINE(ENABLE_SMOOTH_SCROLLING "Toggle smooth scrolling" PRIVATE ON)
     WEBKIT_OPTION_DEFINE(ENABLE_SPEECH_SYNTHESIS "Toggle Speech Synthesis API support" PRIVATE OFF)
     WEBKIT_OPTION_DEFINE(ENABLE_SPELLCHECK "Toggle Spellchecking support (requires Enchant)" PRIVATE OFF)
+    WEBKIT_OPTION_DEFINE(ENABLE_SWIFT_DEMO_URI_SCHEME "Toggle Swift demo URI feature" PRIVATE OFF)
     WEBKIT_OPTION_DEFINE(ENABLE_TELEPHONE_NUMBER_DETECTION "Toggle telephone number detection support" PRIVATE OFF)
     WEBKIT_OPTION_DEFINE(ENABLE_TEXT_AUTOSIZING "Toggle automatic text size adjustment support" PRIVATE OFF)
     WEBKIT_OPTION_DEFINE(ENABLE_THUNDER "Toggle EME V3 Thunder support" PRIVATE OFF)
@@ -356,6 +357,14 @@ macro(WEBKIT_OPTION_END)
             set(FEATURE_DEFINES_WITH_SPACE_SEPARATOR "${FEATURE_DEFINES_WITH_SPACE_SEPARATOR} ${_name}")
         endif ()
     endforeach ()
+
+    # We currently have one feature which requires Swift support - in future
+    # this list will grow.
+    if (ENABLE_SWIFT_DEMO_URI_SCHEME)
+        set(SWIFT_REQUIRED ON)
+    else ()
+        set(SWIFT_REQUIRED OFF)
+    endif ()
 endmacro()
 
 macro(PRINT_WEBKIT_OPTIONS)
@@ -436,6 +445,10 @@ macro(CREATE_CONFIGURATION_HEADER)
         "${CMAKE_BINARY_DIR}/cmakeconfig.h"
     )
     file(REMOVE "${CMAKE_BINARY_DIR}/cmakeconfig.h.tmp")
+endmacro()
+
+macro(GET_WEBKIT_CONFIG_VARIABLES _var_name)
+    set(${_var_name} ${_WEBKIT_CONFIG_FILE_VARIABLES})
 endmacro()
 
 macro(WEBKIT_CHECK_HAVE_INCLUDE _variable _header)

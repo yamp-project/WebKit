@@ -124,10 +124,10 @@ GLContext* PlatformDisplay::sharingGLContext()
     return m_sharingGLContext.get();
 }
 
-void PlatformDisplay::clearSharingGLContext()
+void PlatformDisplay::clearGLContexts()
 {
 #if USE(SKIA)
-    invalidateSkiaGLContexts();
+    clearSkiaGLContext();
 #endif
 #if ENABLE(VIDEO) && USE(GSTREAMER_GL)
     m_gstGLContext = nullptr;
@@ -158,7 +158,8 @@ void PlatformDisplay::terminateEGLDisplay()
 #if ENABLE(VIDEO) && USE(GSTREAMER_GL)
     m_gstGLDisplay = nullptr;
 #endif
-    clearSharingGLContext();
+
+    clearGLContexts();
 
     m_eglDisplay->terminate();
 }
@@ -174,15 +175,15 @@ bool PlatformDisplay::destroyEGLImage(EGLImage image) const
 }
 
 #if USE(GBM)
-const Vector<GLDisplay::DMABufFormat>& PlatformDisplay::dmabufFormats()
+const Vector<GLDisplay::BufferFormat>& PlatformDisplay::bufferFormats()
 {
-    return m_eglDisplay->dmabufFormats();
+    return m_eglDisplay->bufferFormats();
 }
 
 #if USE(GSTREAMER)
-const Vector<GLDisplay::DMABufFormat>& PlatformDisplay::dmabufFormatsForVideo()
+const Vector<GLDisplay::BufferFormat>& PlatformDisplay::bufferFormatsForVideo()
 {
-    return m_eglDisplay->dmabufFormatsForVideo();
+    return m_eglDisplay->bufferFormatsForVideo();
 }
 #endif
 #endif // USE(GBM)

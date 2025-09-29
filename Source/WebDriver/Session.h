@@ -242,11 +242,6 @@ private:
     void setInputFileUploadFiles(const String& elementID, const String& text, bool multiple, Function<void(CommandResult&&)>&&);
     void didSetInputFileUploadFiles(bool wasCancelled);
 
-    enum class MouseInteraction { Move,
-        Down,
-        Up,
-        SingleClick,
-        DoubleClick };
     void performMouseInteraction(int x, int y, MouseButton, MouseInteraction, Function<void(CommandResult&&)>&&);
 
     enum class KeyboardInteractionType { KeyPress,
@@ -275,6 +270,7 @@ private:
         Type type;
         String subtype;
         std::optional<MouseButton> pressedButton;
+        std::optional<MouseInteraction> mouseInteraction;
         std::optional<String> pressedKey;
         HashSet<String> pressedVirtualKeys;
     };
@@ -302,7 +298,7 @@ private:
     String toInternalEventName(const String&);
 
     // Actual event handlers
-    void doLogEntryAdded(RefPtr<JSON::Object>&&);
+    RefPtr<JSON::Object> processLogEntryAdded(RefPtr<JSON::Object>&&);
 #endif
 };
 

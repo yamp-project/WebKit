@@ -46,7 +46,9 @@
 #import "RemoteLayerTreeNode.h"
 #import "RunningBoardServicesSPI.h"
 #import "TapHandlingResult.h"
+#import "TextExtractionFilter.h"
 #import "UIKitSPI.h"
+#import "UIKitUtilities.h"
 #import "UndoOrRedo.h"
 #import "ViewSnapshotStore.h"
 #import "WKContentView.h"
@@ -284,7 +286,12 @@ void PageClientImpl::modelProcessDidExit()
 
 void PageClientImpl::preferencesDidChange()
 {
+#if ENABLE(OVERLAY_REGIONS_IN_EVENT_REGION)
+    if (RetainPtr webView = this->webView())
+        [webView _updateOverlayRegions];
+#else
     notImplemented();
+#endif
 }
 
 void PageClientImpl::toolTipChanged(const String&, const String& newToolTip)
@@ -338,6 +345,10 @@ void PageClientImpl::didCommitLoadForMainFrame(const String& mimeType, bool useC
     [webView _hidePasswordView];
     [webView _setHasCustomContentView:useCustomContentProvider loadedMIMEType:mimeType];
     [contentView() _didCommitLoadForMainFrame];
+#if ENABLE(TEXT_EXTRACTION_FILTER)
+    if (RefPtr filter = TextExtractionFilter::singletonIfCreated())
+        filter->resetCache();
+#endif
 }
 
 void PageClientImpl::didChangeContentSize(const WebCore::IntSize&)
@@ -741,7 +752,7 @@ bool PageClientImpl::handleRunOpenPanel(const WebPageProxy& page, const WebFrame
 #if ENABLE(MEDIA_CAPTURE)
     if (parameters.mediaCaptureType() != WebCore::MediaCaptureType::MediaCaptureTypeNone) {
         if (auto pid = page.configuration().processPool().configuration().presentingApplicationPID())
-            WebCore::MediaSessionHelper::sharedHelper().providePresentingApplicationPID(pid, WebCore::MediaSessionHelper::ShouldOverride::Yes);
+            WebCore::MediaSessionHelper::sharedHelper().providePresentingApplicationPID(pid);
     }
 #endif
 
@@ -1065,7 +1076,7 @@ void PageClientImpl::startDrag(const DragItem& item, ShareableBitmap::Handle&& i
     auto bitmap = ShareableBitmap::create(WTFMove(image));
     if (!bitmap)
         return;
-    [contentView() _startDrag:bitmap->makeCGImageCopy() item:item nodeID:nodeID];
+    [contentView() _startDrag:bitmap->createPlatformImage() item:item nodeID:nodeID];
 }
 
 void PageClientImpl::willReceiveEditDragSnapshot()
@@ -1195,6 +1206,11 @@ bool PageClientImpl::isSimulatingCompatibilityPointerTouches() const
 void PageClientImpl::runModalJavaScriptDialog(CompletionHandler<void()>&& callback)
 {
     [contentView() runModalJavaScriptDialog:WTFMove(callback)];
+}
+
+FloatBoxExtent PageClientImpl::computedObscuredInset() const
+{
+    return floatBoxExtent([webView() _computedObscuredInset]);
 }
 
 WebCore::Color PageClientImpl::contentViewBackgroundColor()

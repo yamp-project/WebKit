@@ -38,6 +38,10 @@
 #include <wtf/unix/UnixFileDescriptor.h>
 #endif
 
+#if OS(ANDROID)
+#include <wtf/android/RefPtrAndroid.h>
+#endif
+
 #if PLATFORM(COCOA)
 #include <WebCore/IOSurface.h>
 #include <WebCore/XRGPUProjectionLayerInit.h>
@@ -243,6 +247,7 @@ struct DepthRange {
 };
 
 struct RequestData {
+    bool isPassthroughFullyObscured;
     DepthRange depthRange;
 };
 
@@ -300,6 +305,9 @@ struct FrameData {
 #endif
     };
 
+#if OS(ANDROID)
+    using ExternalTexture = RefPtr<AHardwareBuffer>;
+#else
     struct ExternalTexture {
 #if PLATFORM(COCOA)
         MachSendRight handle;
@@ -310,8 +318,11 @@ struct FrameData {
         Vector<uint32_t> offsets;
         uint32_t fourcc;
         uint64_t modifier;
+
+        explicit operator bool() const { return !fds.isEmpty(); }
 #endif
     };
+#endif
 
     struct ExternalTextureData {
         uint64_t reusableTextureIndex = 0;
@@ -326,6 +337,7 @@ struct FrameData {
         std::optional<ExternalTextureData> textureData;
         // FIXME: <rdar://134998122> Remove when new CC lands.
         bool requestDepth { false };
+        bool isForTesting { false };
     };
 
     struct InputSourceButton {
@@ -426,6 +438,9 @@ public:
         LayerHandle handle { 0 };
         bool visible { true };
         Vector<LayerView> views;
+#if USE(OPENXR)
+        WTF::UnixFileDescriptor fenceFD;
+#endif
     };
 
     struct ViewData {

@@ -27,15 +27,18 @@
 #pragma once
 
 #include <WebCore/LengthPoint.h>
+#include <WebCore/StyleAnimations.h>
 #include <WebCore/StyleAppearance.h>
 #include <WebCore/StyleAspectRatio.h>
 #include <WebCore/StyleBoxShadow.h>
 #include <WebCore/StyleContent.h>
 #include <WebCore/StyleContentAlignmentData.h>
+#include <WebCore/StyleMaskLayer.h>
 #include <WebCore/StyleObjectPosition.h>
 #include <WebCore/StyleOpacity.h>
 #include <WebCore/StyleOrder.h>
 #include <WebCore/StyleSelfAlignmentData.h>
+#include <WebCore/StyleTransitions.h>
 #include <memory>
 #include <wtf/DataRef.h>
 #include <wtf/FixedVector.h>
@@ -49,8 +52,6 @@ class TextStream;
 
 namespace WebCore {
 
-class AnimationList;
-class FillLayer;
 class StyleDeprecatedFlexibleBoxData;
 class StyleFilterData;
 class StyleFlexibleBoxData;
@@ -82,11 +83,11 @@ public:
     DataRef<StyleMultiColData> multiCol; //  CSS3 multicol properties
     DataRef<StyleFilterData> filter; // Filter operations (url, sepia, blur, etc.)
     DataRef<StyleTransformData> transform; // Transform properties (rotate, scale, skew, etc.)
-    DataRef<FillLayer> mask;
     DataRef<StyleVisitedLinkColorData> visitedLinkColor;
 
-    RefPtr<AnimationList> animations;
-    RefPtr<AnimationList> transitions;
+    Style::MaskLayers mask;
+    Style::Animations animations;
+    Style::Transitions transitions;
     Style::Content content;
     Style::BoxShadows boxShadow;
     Style::AspectRatio aspectRatio;

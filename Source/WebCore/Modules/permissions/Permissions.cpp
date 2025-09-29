@@ -26,6 +26,7 @@
 #include "config.h"
 #include "Permissions.h"
 
+#include "ContextDestructionObserverInlines.h"
 #include "DedicatedWorkerGlobalScope.h"
 #include "DocumentInlines.h"
 #include "Exception.h"
@@ -43,6 +44,7 @@
 #include "PermissionName.h"
 #include "PermissionQuerySource.h"
 #include "PermissionsPolicy.h"
+#include "Quirks.h"
 #include "ScriptExecutionContext.h"
 #include "SecurityOrigin.h"
 #include "ServiceWorkerGlobalScope.h"
@@ -186,6 +188,10 @@ void Permissions::query(JSC::Strong<JSC::JSObject> permissionDescriptorValue, DO
             }
 #endif
 
+#if ENABLE(MEDIA_STREAM)
+            if (document->quirks().shouldEnableCameraAndMicrophonePermissionStateQuirk() && (permissionDescriptor.name == PermissionName::Camera || permissionDescriptor.name == PermissionName::Microphone) && *permissionState == PermissionState::Prompt)
+                permissionState = PermissionState::Granted;
+#endif
             promise.resolve(PermissionStatus::create(document, *permissionState, permissionDescriptor, PermissionQuerySource::Window, WTFMove(page)));
         });
         return;

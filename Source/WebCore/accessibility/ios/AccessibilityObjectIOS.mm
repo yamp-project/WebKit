@@ -24,7 +24,7 @@
  */
 
 #import "config.h"
-#import "AccessibilityObject.h"
+#import "AccessibilityObjectInlines.h"
 
 #if PLATFORM(IOS_FAMILY)
 
@@ -268,10 +268,9 @@ static void attributeStringSetStyle(NSMutableAttributedString *attrString, Rende
     auto& style = renderer->style();
 
     // Set basic font info.
-    attributedStringSetFont(attrString, style.fontCascade().primaryFont()->getCTFont(), range);
+    attributedStringSetFont(attrString, style.fontCascade().primaryFont()->ctFont(), range);
 
-    auto decor = style.textDecorationLineInEffect();
-    if (decor & TextDecorationLine::Underline)
+    if (style.textDecorationLineInEffect().hasUnderline())
         attributedStringSetNumber(attrString, AccessibilityTokenUnderline, @YES, range);
 
     // Add code context if this node is within a <code> block.

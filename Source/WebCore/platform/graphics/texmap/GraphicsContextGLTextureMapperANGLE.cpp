@@ -54,6 +54,10 @@
 #include "TextureMapperGCGLPlatformLayer.h"
 #endif
 
+#if OS(ANDROID)
+#include "GraphicsContextGLTextureMapperAndroid.h"
+#endif
+
 #if USE(GBM)
 #include "GraphicsContextGLTextureMapperGBM.h"
 #endif
@@ -95,6 +99,14 @@ GraphicsContextGLANGLE::~GraphicsContextGLANGLE()
     GL_DeleteFramebuffers(1, &m_fbo);
 
     if (m_contextObj) {
+        for (auto* image : m_eglImages.values()) {
+            bool result = EGL_DestroyImageKHR(m_displayObj, image);
+            ASSERT_UNUSED(result, !!result);
+        }
+        for (auto* sync : m_eglSyncs.values()) {
+            bool result = EGL_DestroySync(m_displayObj, sync);
+            ASSERT_UNUSED(result, !!result);
+        }
         EGL_MakeCurrent(m_displayObj, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         EGL_DestroyContext(m_displayObj, m_contextObj);
     }
@@ -132,7 +144,17 @@ RefPtr<PixelBuffer> GraphicsContextGLTextureMapperANGLE::readCompositedResults()
 
 RefPtr<GraphicsContextGL> createWebProcessGraphicsContextGL(const GraphicsContextGLAttributes& attributes)
 {
-#if USE(GBM)
+#if OS(ANDROID) && ENABLE(WEBXR)
+    const auto& eglExtensions = PlatformDisplay::sharedDisplay().eglExtensions();
+    if (eglExtensions.ANDROID_get_native_client_buffer && eglExtensions.ANDROID_image_native_buffer) {
+        if (auto context = GraphicsContextGLTextureMapperAndroid::create(GraphicsContextGLAttributes { attributes }))
+            return context;
+        LOG_ERROR("Failed to create an Android graphics context, the fallback is not expected to work for WebXR content");
+    } else {
+        LOG_ERROR("Cannot create an Android graphics context: extension EGL_ANDROID_get_native_client_buffer %s, ANDROID_image_native_buffer %s; textures fallback not expected to work",
+            eglExtensions.ANDROID_get_native_client_buffer ? "found" : "missing", eglExtensions.ANDROID_image_native_buffer ? "found" : "missing");
+    }
+#elif USE(GBM)
     auto& display = PlatformDisplay::sharedDisplay();
     if (display.type() == PlatformDisplay::Type::GBM && display.eglExtensions().KHR_image_base && display.eglExtensions().EXT_image_dma_buf_import) {
         static const char* disableGBM = getenv("WEBKIT_WEBGL_DISABLE_GBM");
@@ -415,6 +437,40 @@ unsigned GraphicsContextGLTextureMapperANGLE::glVersion() const
 }
 
 #if ENABLE(WEBXR)
+GCGLExternalSync GraphicsContextGLTextureMapperANGLE::createExternalSync(ExternalSyncSource&&)
+{
+    const auto& display = PlatformDisplay::sharedDisplay();
+    if (!display.eglCheckVersion(1, 5) || !display.eglExtensions().ANDROID_native_fence_sync)
+        return { };
+
+    auto eglSync = EGL_CreateSync(m_displayObj, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
+    if (!eglSync) {
+        addError(GCGLErrorCode::InvalidOperation);
+        return { };
+    }
+
+    GL_Flush();
+    auto newName = ++m_nextExternalSyncName;
+    m_eglSyncs.add(newName, eglSync);
+    return newName;
+}
+
+#if USE(OPENXR)
+UnixFileDescriptor GraphicsContextGLTextureMapperANGLE::exportExternalSync(GCGLExternalSync sync)
+{
+    if (!sync)
+        return { };
+
+    auto eglSync = m_eglSyncs.get(sync);
+    if (!eglSync) {
+        addError(GCGLErrorCode::InvalidOperation);
+        return { };
+    }
+
+    return UnixFileDescriptor { EGL_DupNativeFenceFDANDROID(m_displayObj, eglSync), UnixFileDescriptor::Adopt };
+}
+#endif
+
 bool GraphicsContextGLTextureMapperANGLE::addFoveation(IntSize, IntSize, IntSize, std::span<const GCGLfloat>, std::span<const GCGLfloat>, std::span<const GCGLfloat>)
 {
     return false;

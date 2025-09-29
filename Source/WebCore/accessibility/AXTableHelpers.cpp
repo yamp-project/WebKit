@@ -43,6 +43,8 @@
 #include "RenderObject.h"
 #include "RenderStyle.h"
 #include "RenderTable.h"
+#include "RenderTableCell.h"
+#include "RenderTableRow.h"
 #include "StylePrimitiveNumericTypes+Evaluation.h"
 #include <queue>
 
@@ -74,6 +76,49 @@ bool isTableRole(AccessibilityRole role)
     default:
         return false;
     }
+}
+
+bool hasRowRole(Element& element)
+{
+    return hasRole(element, "row"_s);
+}
+
+bool isTableRowElement(Element& element)
+{
+    if (hasRowRole(element))
+        return true;
+
+    if (!hasRole(element, nullAtom())) {
+        // This has a non-row role, so it shouldn't be considered a row.
+        return false;
+    }
+
+    bool isAnonymous = false;
+    CheckedPtr renderer = element.renderer();
+#if USE(ATSPI)
+    isAnonymous = renderer && renderer->isAnonymous();
+#endif
+
+    if (is<RenderTableRow>(renderer.get()) && !isAnonymous)
+        return true;
+
+    return is<HTMLTableRowElement>(element);
+}
+
+bool isTableCellElement(Element& element)
+{
+    if (hasCellARIARole(element))
+        return true;
+
+    if (is<HTMLTableCellElement>(element) && hasRole(element, nullAtom()))
+        return true;
+
+    bool isAnonymous = false;
+    CheckedPtr renderer = element.renderer();
+#if USE(ATSPI)
+    isAnonymous = renderer && renderer->isAnonymous();
+#endif
+    return is<RenderTableCell>(renderer) && !isAnonymous;
 }
 
 HTMLTableElement* tableElementIncludingAncestors(Node* node, RenderObject* renderer)
@@ -151,8 +196,8 @@ bool isDataTableWithTraversal(HTMLTableElement& tableElement, AXObjectCache& cac
     CheckedPtr<const RenderStyle> tableStyle = safeStyleFrom(tableElement);
     // Store the background color of the table to check against cell's background colors.
     Color tableBackgroundColor = tableStyle ? tableStyle->visitedDependentColor(CSSPropertyBackgroundColor) : Color::white;
-    unsigned tableHorizontalBorderSpacing = tableStyle ? Style::evaluate(tableStyle->borderHorizontalSpacing()) : 0;
-    unsigned tableVerticalBorderSpacing = tableStyle ? Style::evaluate(tableStyle->borderVerticalSpacing()) : 0;
+    unsigned tableHorizontalBorderSpacing = tableStyle ? tableStyle->borderHorizontalSpacing().resolveZoom(Style::ZoomNeeded { }) : 0;
+    unsigned tableVerticalBorderSpacing = tableStyle ? tableStyle->borderVerticalSpacing().resolveZoom(Style::ZoomNeeded { }) : 0;
 
     unsigned cellCount = 0;
     unsigned borderedCellCount = 0;

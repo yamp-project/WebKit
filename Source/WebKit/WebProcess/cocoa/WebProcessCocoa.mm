@@ -125,11 +125,13 @@
 #import <wtf/ProcessPrivilege.h>
 #import <wtf/RuntimeApplicationChecks.h>
 #import <wtf/SoftLinking.h>
+#import <wtf/cf/NotificationCenterCF.h>
 #import <wtf/cocoa/Entitlements.h>
 #import <wtf/cocoa/NSURLExtras.h>
 #import <wtf/cocoa/RuntimeApplicationChecksCocoa.h>
 #import <wtf/cocoa/TypeCastsCocoa.h>
 #import <wtf/cocoa/VectorCocoa.h>
+#import <wtf/darwin/DispatchExtras.h>
 #import <wtf/spi/cocoa/OSLogSPI.h>
 #import <wtf/spi/darwin/SandboxSPI.h>
 #import <wtf/text/MakeString.h>
@@ -367,7 +369,7 @@ static void setVideoDecoderBehaviors(OptionSet<VideoDecoderBehavior> videoDecode
 void WebProcess::platformInitializeWebProcess(WebProcessCreationParameters& parameters)
 {
 #if ENABLE(LOGD_BLOCKING_IN_WEBCONTENT)
-    initializeLogForwarding();
+    initializeLogForwarding(parameters);
 #endif
 
 #if ENABLE(NOTIFY_BLOCKING)
@@ -411,7 +413,7 @@ void WebProcess::platformInitializeWebProcess(WebProcessCreationParameters& para
         // FIXME: remove this once <rdar://90127163> is fixed.
         // Dispatch this work on a thread to avoid blocking the main thread. We will wait for this to complete at the end of this method.
         codeCheckSemaphore = adoptOSObject(dispatch_semaphore_create(0));
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), [codeCheckSemaphore = codeCheckSemaphore] {
+        dispatch_async(globalDispatchQueueSingleton(QOS_CLASS_USER_INTERACTIVE, 0), [codeCheckSemaphore = codeCheckSemaphore] {
             auto bundleURL = adoptCF(CFBundleCopyBundleURL(CFBundleGetMainBundle()));
             SecStaticCodeRef code = nullptr;
             if (bundleURL)
@@ -833,12 +835,12 @@ static void prewarmLogs()
 }
 #endif // PLATFORM(IOS_FAMILY)
 
-static bool shouldIgnoreLogMessage(std::span<const LChar> logChannel)
+static bool shouldIgnoreLogMessage(std::span<const Latin1Character> logChannel)
 {
     return equalSpans(logChannel, "com.apple.xpc\0"_span8) || equalSpans(logChannel, "com.apple.CoreAnalytics\0"_span8);
 }
 
-static void registerLogClient(std::unique_ptr<LogClient>&& newLogClient)
+static void registerLogClient(bool isDebugLoggingEnabled, std::unique_ptr<LogClient>&& newLogClient)
 {
 #if PLATFORM(IOS_FAMILY)
     prewarmLogs();
@@ -849,27 +851,21 @@ static void registerLogClient(std::unique_ptr<LogClient>&& newLogClient)
 
     static os_log_hook_t prevHook = nullptr;
 
-#ifdef NDEBUG
     // OS_LOG_TYPE_DEFAULT implies default, fault, and error.
-    constexpr auto minimumType = OS_LOG_TYPE_DEFAULT;
-#else
     // OS_LOG_TYPE_DEBUG implies debug, info, default, fault, and error.
-    constexpr auto minimumType = OS_LOG_TYPE_DEBUG;
-#endif
+    const auto minimumType = isDebugLoggingEnabled ? OS_LOG_TYPE_DEBUG : OS_LOG_TYPE_DEFAULT;
 
-    prevHook = os_log_set_hook(minimumType, makeBlockPtr([](os_log_type_t type, os_log_message_t msg) {
+    prevHook = os_log_set_hook(minimumType, makeBlockPtr([isDebugLoggingEnabled](os_log_type_t type, os_log_message_t msg) {
         if (prevHook)
             prevHook(type, msg);
 
         if (msg->buffer_sz > 1024)
             return;
 
-#ifdef NDEBUG
-        // Don't send messages with types we don't want to log in release. Even though OS_LOG_TYPE_DEFAULT is the minimum,
+        // Don't send debug/info messages unless debug logging is enabled. Even though OS_LOG_TYPE_DEFAULT would be the minimum,
         // the hook will be called for other subsystems with debug and info types.
-        if (type & (OS_LOG_TYPE_DEBUG | OS_LOG_TYPE_INFO))
+        if (!isDebugLoggingEnabled && type & (OS_LOG_TYPE_DEBUG | OS_LOG_TYPE_INFO))
             return;
-#endif
 
         if (Thread::currentThreadIsRealtime())
             return;
@@ -887,7 +883,7 @@ static void registerLogClient(std::unique_ptr<LogClient>&& newLogClient)
             type = OS_LOG_TYPE_ERROR;
 
         if (char* messageString = os_log_copy_message_string(msg)) {
-            auto logString = spanConstCast<LChar>(unsafeSpan8IncludingNullTerminator(messageString));
+            auto logString = spanConstCast<Latin1Character>(unsafeSpan8IncludingNullTerminator(messageString));
             if (logString.size() > logStringMaxSize) {
                 logString = logString.first(logStringMaxSize);
                 logString.back() = 0;
@@ -900,7 +896,7 @@ static void registerLogClient(std::unique_ptr<LogClient>&& newLogClient)
     WTFSignpostIndirectLoggingEnabled = true;
 }
 
-void WebProcess::initializeLogForwarding()
+void WebProcess::initializeLogForwarding(const WebProcessCreationParameters& parameters)
 {
     if (os_trace_get_mode() != OS_TRACE_MODE_OFF)
         return;
@@ -908,6 +904,9 @@ void WebProcess::initializeLogForwarding()
     RefPtr parentConnection = parentProcessConnection();
     if (!parentConnection)
         return;
+
+    WEBPROCESS_RELEASE_LOG(Process, "initializeLogForwarding: Debug logging enabled: %d", parameters.isDebugLoggingEnabled);
+
 #if ENABLE(STREAMING_IPC_IN_LOG_FORWARDING)
     static constexpr auto connectionBufferSizeLog2 = 17;
     auto connectionPair = IPC::StreamClientConnection::create(connectionBufferSizeLog2, 1_s);
@@ -916,14 +915,14 @@ void WebProcess::initializeLogForwarding()
     auto [connection, handle] = WTFMove(*connectionPair);
     connection->open(*this, RunLoop::currentSingleton());
     std::unique_ptr newLogClient = makeUnique<LogClient>(Ref { connection });
-    parentConnection->sendWithAsyncReply(Messages::WebProcessProxy::CreateLogStream(WTFMove(handle), newLogClient->identifier()), [newLogClient = WTFMove(newLogClient), connection = WTFMove(connection)] (IPC::Semaphore&& wakeUpSemaphore, IPC::Semaphore&& clientWaitSemaphore) mutable {
+    parentConnection->sendWithAsyncReply(Messages::WebProcessProxy::CreateLogStream(WTFMove(handle), newLogClient->identifier()), [newLogClient = WTFMove(newLogClient), connection = WTFMove(connection), isDebugLoggingEnabled = parameters.isDebugLoggingEnabled] (IPC::Semaphore&& wakeUpSemaphore, IPC::Semaphore&& clientWaitSemaphore) mutable {
         connection->setSemaphores(WTFMove(wakeUpSemaphore), WTFMove(clientWaitSemaphore));
-        registerLogClient(WTFMove(newLogClient));
+        registerLogClient(isDebugLoggingEnabled, WTFMove(newLogClient));
     });
 #else
     std::unique_ptr newLogClient = makeUnique<LogClient>(*parentConnection);
-    parentConnection->sendWithAsyncReply(Messages::WebProcessProxy::CreateLogStream(newLogClient->identifier()), [newLogClient = WTFMove(newLogClient)] mutable {
-        registerLogClient(WTFMove(newLogClient));
+    parentConnection->sendWithAsyncReply(Messages::WebProcessProxy::CreateLogStream(newLogClient->identifier()), [newLogClient = WTFMove(newLogClient), isDebugLoggingEnabled = parameters.isDebugLoggingEnabled] mutable {
+        registerLogClient(isDebugLoggingEnabled, WTFMove(newLogClient));
     });
 #endif
 
@@ -1161,7 +1160,7 @@ void WebProcess::destroyRenderingResources()
 void WebProcess::releaseSystemMallocMemory()
 {
 #if PLATFORM(MAC) || PLATFORM(MACCATALYST)
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
+    dispatch_async(globalDispatchQueueSingleton(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0), ^{
 #if !RELEASE_LOG_DISABLED
         MonotonicTime startTime = MonotonicTime::now();
 #endif
@@ -1322,7 +1321,7 @@ void WebProcess::updatePageAccessibilitySettings()
 #if PLATFORM(MAC) || PLATFORM(MACCATALYST)
 void WebProcess::colorPreferencesDidChange()
 {
-    CFNotificationCenterPostNotification(CFNotificationCenterGetLocalCenter(), CFSTR("NSColorLocalPreferencesChangedNotification"), nullptr, nullptr, true);
+    CFNotificationCenterPostNotification(CFNotificationCenterGetLocalCenterSingleton(), CFSTR("NSColorLocalPreferencesChangedNotification"), nullptr, nullptr, true);
 }
 #endif
 
@@ -1378,12 +1377,13 @@ void WebProcess::dispatchSimulatedNotificationsForPreferenceChange(const String&
         RetainPtr notificationCenter = [NSNotificationCenter defaultCenter];
         [notificationCenter postNotificationName:@"NSSystemColorsWillChangeNotification" object:nil];
         [notificationCenter postNotificationName:NSSystemColorsDidChangeNotification object:nil];
+    } else if (key == increaseContrastPreferenceKey()) {
+        RetainPtr notificationCenter = [[NSWorkspace sharedWorkspace] notificationCenter];
+        [notificationCenter postNotificationName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification object:nil];
     }
 #endif
-    if (key == captionProfilePreferenceKey()) {
-        RetainPtr notificationCenter = CFNotificationCenterGetLocalCenter();
-        CFNotificationCenterPostNotification(notificationCenter.get(), kMAXCaptionAppearanceSettingsChangedNotification, nullptr, nullptr, true);
-    }
+    if (key == captionProfilePreferenceKey())
+        CFNotificationCenterPostNotification(CFNotificationCenterGetLocalCenterSingleton(), kMAXCaptionAppearanceSettingsChangedNotification, nullptr, nullptr, true);
 }
 
 void WebProcess::handlePreferenceChange(const String& domain, const String& key, id value)
@@ -1561,7 +1561,7 @@ void WebProcess::openDirectoryCacheInvalidated(SandboxExtension::Handle&& handle
             bootstrapExtension->revoke();
     };
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), makeBlockPtr(WTFMove(cacheInvalidationHandler)).get());
+    dispatch_async(globalDispatchQueueSingleton(QOS_CLASS_UTILITY, 0), makeBlockPtr(WTFMove(cacheInvalidationHandler)).get());
 }
 #endif
 

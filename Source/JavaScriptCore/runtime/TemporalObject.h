@@ -127,6 +127,11 @@ enum class Inclusivity : bool {
     Exclusive
 };
 
+enum class DifferenceOperation : bool {
+    Since,
+    Until
+};
+
 double nonNegativeModulo(double x, double y);
 WTF::String ellipsizeAt(unsigned maxLength, const WTF::String&);
 PropertyName temporalUnitPluralPropertyName(VM&, TemporalUnit);
@@ -146,6 +151,7 @@ double temporalRoundingIncrement(JSGlobalObject*, JSObject* options, std::option
 double roundNumberToIncrement(double, double increment, RoundingMode);
 Int128 roundNumberToIncrement(Int128, Int128 increment, RoundingMode);
 Int128 roundNumberToIncrementInt128(Int128, Int128, RoundingMode);
+Int128 roundNumberToIncrementInt128(Int128, Int128 increment, RoundingMode);
 Int128 roundNumberToIncrementAsIfPositive(Int128, Int128, RoundingMode);
 double applyUnsignedRoundingMode(double, double, double, UnsignedRoundingMode);
 void rejectObjectWithCalendarOrTimeZone(JSGlobalObject*, JSObject*);

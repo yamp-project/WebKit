@@ -31,13 +31,11 @@
 #import "AXAttributeCacheScope.h"
 #import "AXLogger.h"
 #import "AXNotifications.h"
-#import "AXObjectCache.h"
 #import "AXObjectCacheInlines.h"
 #import "AXSearchManager.h"
 #import "AXUtilities.h"
 #import "AccessibilityRenderObject.h"
 #import "AccessibilityScrollView.h"
-#import "AccessibilityTableCell.h"
 #import "Chrome.h"
 #import "ChromeClient.h"
 #import "FontCascade.h"
@@ -64,6 +62,7 @@
 #import "WAKWindow.h"
 #import "WebCoreThread.h"
 #import <CoreText/CoreText.h>
+#import <wtf/HashFunctions.h>
 #import <wtf/RuntimeApplicationChecks.h>
 #import <wtf/cocoa/VectorCocoa.h>
 
@@ -499,7 +498,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     if (![self _prepareAccessibilityCall])
         return nil;
 
-    return accessibilityRoleToString(self.axBackingObject->role()).createNSString().autorelease();
+    return roleToString(self.axBackingObject->role()).createNSString().autorelease();
 }
 
 - (BOOL)accessibilityHasPopup
@@ -578,6 +577,7 @@ static AccessibilityObjectWrapper* AccessibilityUnignoredAncestor(AccessibilityO
     return roleValue == AccessibilityRole::ApplicationDialog || roleValue == AccessibilityRole::ApplicationAlertDialog;
 }
 
+using AccessibilityRoleSet = HashSet<AccessibilityRole, IntHash<AccessibilityRole>, WTF::StrongEnumHashTraits<AccessibilityRole>>;
 static AccessibilityObjectWrapper *ancestorWithRole(const AXCoreObject& descendant, const AccessibilityRoleSet& roles)
 {
     auto* ancestor = Accessibility::findAncestor(descendant, false, [&roles] (const auto& object) {
@@ -1054,6 +1054,8 @@ static AccessibilityObjectWrapper *ancestorWithRole(const AXCoreObject& descenda
     case AccessibilityRole::LineBreak:
     case AccessibilityRole::Presentational:
     case AccessibilityRole::RemoteFrame:
+    case AccessibilityRole::LocalFrame:
+    case AccessibilityRole::FrameHost:
     case AccessibilityRole::Unknown:
         return false;
     }
@@ -1233,13 +1235,13 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     return [result length] ? result : nil;
 }
 
-- (AccessibilityTableCell*)tableCellParent
+- (AccessibilityObject*)tableCellParent
 {
     // Find if this element is in a table cell.
     if (AXCoreObject* parent = Accessibility::findAncestor<AXCoreObject>(*self.axBackingObject, true, [] (const AXCoreObject& object) {
         return object.isExposedTableCell();
     }))
-        return &downcast<AccessibilityTableCell>(*parent);
+        return &downcast<AccessibilityObject>(*parent);
     return nil;
 }
 
@@ -1267,7 +1269,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     if (![self _prepareAccessibilityCall])
         return nil;
 
-    AccessibilityTableCell* tableCell = [self tableCellParent];
+    AccessibilityObject* tableCell = [self tableCellParent];
     if (!tableCell)
         return nil;
 
@@ -1363,7 +1365,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
 {
     if (![self _prepareAccessibilityCall])
         return NSNotFound;
-    AccessibilityTableCell* tableCell = [self tableCellParent];
+    AccessibilityObject* tableCell = [self tableCellParent];
     if (!tableCell)
         return NSNotFound;
 
@@ -1375,7 +1377,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
 {
     if (![self _prepareAccessibilityCall])
         return NSNotFound;
-    AccessibilityTableCell* tableCell = [self tableCellParent];
+    AccessibilityObject* tableCell = [self tableCellParent];
     if (!tableCell)
         return NSNotFound;
 
@@ -1387,7 +1389,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
 {
     if (![self _prepareAccessibilityCall])
         return nil;
-    RefPtr<AccessibilityTableCell> tableCell = [self tableCellParent];
+    RefPtr<AccessibilityObject> tableCell = [self tableCellParent];
     if (!tableCell)
         return nil;
 
@@ -1399,7 +1401,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
 {
     if (![self _prepareAccessibilityCall])
         return nil;
-    RefPtr<AccessibilityTableCell> tableCell = [self tableCellParent];
+    RefPtr<AccessibilityObject> tableCell = [self tableCellParent];
     if (!tableCell)
         return nil;
 
@@ -1479,7 +1481,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     if (![self _prepareAccessibilityCall])
         return NSMakeRange(NSNotFound, 0);
 
-    AccessibilityTableCell* tableCell = [self tableCellParent];
+    AccessibilityObject* tableCell = [self tableCellParent];
     if (!tableCell)
         return NSMakeRange(NSNotFound, 0);
 
@@ -1864,7 +1866,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     if (![self _prepareAccessibilityCall])
         return nil;
 
-    auto* focus = self.axBackingObject->focusedUIElement();
+    auto* focus = self.axBackingObject->focusedUIElementInAnyLocalFrame();
     return focus ? focus->wrapper() : nil;
 }
 
@@ -1893,7 +1895,7 @@ static void appendStringToResult(NSMutableString *result, NSString *string)
     // The parentView should have an accessibilityContainer, if the UIKit accessibility bundle was loaded.
     // The exception is DRT, which tests accessibility without the entire system turning accessibility on. Hence,
     // this check should be valid for everything except DRT.
-    ASSERT([parentView accessibilityContainer] || WTF::IOSApplication::isDumpRenderTree());
+    ASSERT([parentView accessibilityContainer] || WTF::CocoaApplication::isDumpRenderTree());
 
     return [parentView accessibilityContainer];
 }
@@ -2000,7 +2002,12 @@ static NSArray *accessibleElementsForObjects(const AXCoreObject::AccessibilityCh
 {
     if (![self _prepareAccessibilityCall])
         return nil;
-    return accessibleElementsForObjects(self.axBackingObject->detailedByObjects());
+
+    return createNSArray(self.axBackingObject->detailedByObjects(), [] (auto&& detailedByObject) -> id {
+        auto wrapper = detailedByObject->wrapper();
+        ASSERT(wrapper);
+        return wrapper;
+    }).autorelease();
 }
 
 - (NSArray *)accessibilityErrorMessageElements
@@ -2106,14 +2113,17 @@ static RenderObject* rendererForView(WAKView* view)
 
 - (id)_accessibilityParentForSubview:(id)subview
 {
-    RenderObject* renderer = rendererForView(subview);
+    CheckedPtr renderer = rendererForView(subview);
     if (!renderer)
         return nil;
 
-    AccessibilityObject* obj = renderer->document().axObjectCache()->getOrCreate(*renderer);
-    if (obj)
-        return obj->parentObjectUnignored()->wrapper();
-    return nil;
+    CheckedPtr cache = renderer->protectedDocument()->axObjectCache();
+    if (!cache)
+        return nil;
+
+    RefPtr object = cache->getOrCreate(*renderer);
+    RefPtr parent = object ? object->parentObjectUnignored() : nullptr;
+    return parent ? parent->wrapper() : nil;
 }
 
 // These will be used by the UIKit wrapper to calculate an appropriate description of scroll status.
@@ -3241,6 +3251,37 @@ static RenderObject* rendererForView(WAKView* view)
 - (NSString *)description
 {
     return [NSString stringWithFormat:@"%@: %@", [self class], [self accessibilityLabel]];
+}
+
+- (AccessibilityOrientation)accessibilityOrientation
+{
+    if (![self _prepareAccessibilityCall])
+        return AccessibilityOrientation::Undefined;
+
+    std::optional defaultOrientation = self.axBackingObject->defaultOrientation();
+    // If we don't have a default orientation (unknown or otherwise), don't expose anything.
+    if (!defaultOrientation)
+        return AccessibilityOrientation::Undefined;
+
+    // If the orientation is the default, we don't need to share that with ATs.
+    std::optional orientation = self.axBackingObject->orientation();
+    return orientation && *orientation == *defaultOrientation ? AccessibilityOrientation::Undefined : *orientation;
+}
+
+- (BOOL)accessibilitySupportsKeyboardShortcuts
+{
+    if (![self _prepareAccessibilityCall])
+        return NO;
+
+    return self.axBackingObject->supportsKeyShortcuts();
+}
+
+- (NSString *)accessibilityKeyboardShortcuts
+{
+    if (![self _prepareAccessibilityCall])
+        return nil;
+
+    return self.axBackingObject->keyShortcuts().createNSString().autorelease();
 }
 
 @end

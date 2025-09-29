@@ -65,7 +65,12 @@ platform/graphics/PlatformDisplay.cpp @no-unify
 
 platform/graphics/angle/PlatformDisplayANGLE.cpp @no-unify
 
+platform/graphics/glib/ImageAdapterGLib.cpp
+
 platform/graphics/wpe/SystemFontDatabaseWPE.cpp
+
+platform/graphics/android/GraphicsContextGLTextureMapperAndroid.h @no-unify
+platform/graphics/android/GraphicsContextGLTextureMapperAndroid.cpp @no-unify
 
 platform/graphics/egl/GLContext.cpp @no-unify
 platform/graphics/egl/GLContextLibWPE.cpp @no-unify

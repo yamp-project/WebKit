@@ -105,25 +105,6 @@ Wrapper(CSSPropertyID, T (RenderStyle::*getter)() const, void (RenderStyle::*set
 template<typename T>
 Wrapper(CSSPropertyID, const T& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T&&)) -> Wrapper<T, const T&, T&&>;
 
-template<typename T>
-class RefCountedWrapper : public WrapperWithGetter<T*> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(RefCountedWrapper, Animation);
-public:
-    RefCountedWrapper(CSSPropertyID property, T* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(RefPtr<T>&&))
-        : WrapperWithGetter<T*>(property, getter)
-        , m_setter(setter)
-    {
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        (destination.*this->m_setter)(blendFunc(this->value(from), this->value(to), context));
-    }
-
-private:
-    void (RenderStyle::*m_setter)(RefPtr<T>&&);
-};
-
 // MARK: - Typed Wrappers
 
 template<typename T, typename GetterType = T, typename SetterType = T>
@@ -144,9 +125,9 @@ public:
         return Style::equalsForBlending(this->value(from), this->value(to), from, to);
     }
 
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const override
+    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation operation) const override
     {
-        return Style::canBlend(this->value(from), this->value(to), from, to);
+        return Style::canBlend(this->value(from), this->value(to), from, to, operation);
     }
 
     bool requiresInterpolationForAccumulativeIteration(const RenderStyle& from, const RenderStyle& to) const override
@@ -226,77 +207,6 @@ public:
     StyleTypeWrapper<T, const T&, T&&> m_visitedWrapper;
 };
 
-template<typename T>
-class AutoWrapper final : public Wrapper<T> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(AutoWrapper, Animation);
-public:
-    AutoWrapper(CSSPropertyID property, T (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T), bool (RenderStyle::*autoGetter)() const, void (RenderStyle::*autoSetter)(), std::optional<T> minValue = std::nullopt)
-        : Wrapper<T>(property, getter, setter)
-        , m_autoGetter(autoGetter)
-        , m_autoSetter(autoSetter)
-        , m_minValue(minValue)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        return !(from.*m_autoGetter)() && !(to.*m_autoGetter)();
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        auto blendedValue = blendFunc(this->value(from), this->value(to), context);
-        if (m_minValue)
-            blendedValue = blendedValue > *m_minValue ? blendedValue : *m_minValue;
-        (destination.*this->m_setter)(blendedValue);
-
-        if (!context.isDiscrete)
-            return;
-
-        ASSERT(!context.progress || context.progress == 1.0);
-        if (!context.progress) {
-            if ((from.*m_autoGetter)())
-                (destination.*m_autoSetter)();
-        } else {
-            if ((to.*m_autoGetter)())
-                (destination.*m_autoSetter)();
-        }
-    }
-
-private:
-    bool (RenderStyle::*m_autoGetter)() const;
-    void (RenderStyle::*m_autoSetter)();
-    std::optional<T> m_minValue;
-};
-
-class FloatWrapper : public Wrapper<float> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FloatWrapper, Animation);
-public:
-    enum class ValueRange : uint8_t {
-        All,
-        NonNegative,
-        Positive
-    };
-    FloatWrapper(CSSPropertyID property, float (RenderStyle::*getter)() const, void (RenderStyle::*setter)(float), ValueRange valueRange = ValueRange::All)
-        : Wrapper(property, getter, setter)
-        , m_valueRange(valueRange)
-    {
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const override
-    {
-        auto blendedValue = blendFunc(value(from), value(to), context);
-        if (m_valueRange == ValueRange::NonNegative && blendedValue <= 0)
-            blendedValue = 0;
-        else if (m_valueRange == ValueRange::Positive && blendedValue < 0)
-            blendedValue = std::numeric_limits<float>::epsilon();
-        (destination.*m_setter)(blendedValue);
-    }
-
-private:
-    ValueRange m_valueRange;
-};
-
 class LengthWrapper : public WrapperWithGetter<const WebCore::Length&> {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(LengthWrapper, Animation);
 public:
@@ -330,35 +240,6 @@ public:
 private:
     void (RenderStyle::*m_setter)(WebCore::Length&&);
     OptionSet<Flags> m_flags;
-};
-
-template<typename T>
-class LengthVariantWrapper final : public WrapperWithGetter<const T&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(LengthVariantWrapper, Animation);
-public:
-    LengthVariantWrapper(CSSPropertyID property, const T& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T&&))
-        : WrapperWithGetter<const T&>(property, getter)
-        , m_setter(setter)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        return canInterpolateLengthVariants(this->value(from), this->value(to));
-    }
-
-    bool requiresInterpolationForAccumulativeIteration(const RenderStyle& from, const RenderStyle& to) const final
-    {
-        return lengthVariantRequiresInterpolationForAccumulativeIteration(this->value(from), this->value(to));
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        (destination.*m_setter)(blendFunc(this->value(from), this->value(to), context));
-    }
-
-private:
-    void (RenderStyle::*m_setter)(T&&);
 };
 
 // MARK: - Discrete Wrappers
@@ -398,6 +279,23 @@ DiscreteWrapper(CSSPropertyID, const T& (RenderStyle::*getter)() const, void (Re
 // Deduction guide for getter/setters that return values and take r-value references.
 template<typename T>
 DiscreteWrapper(CSSPropertyID, T (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T&&)) -> DiscreteWrapper<T, T, T&&>;
+
+template<typename T>
+class NonNormalizedDiscreteWrapper final : public Wrapper<T> {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(NonNormalizedDiscreteWrapper, Animation);
+public:
+    NonNormalizedDiscreteWrapper(CSSPropertyID property, T (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T))
+        : Wrapper<T>(property, getter, setter)
+    {
+    }
+
+    bool canInterpolate(const RenderStyle&, const RenderStyle&, CompositeOperation) const final
+    {
+        return false;
+    }
+};
+
+// MARK: - Font Property Wrappers
 
 class FontSizeWrapper final : public Wrapper<float> {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontSizeWrapper, Animation);
@@ -480,21 +378,6 @@ private:
 
     T (FontCascadeDescription::*m_getter)() const;
     void (FontCascadeDescription::*m_setter)(T);
-};
-
-template<typename T>
-class NonNormalizedDiscreteWrapper final : public Wrapper<T> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(NonNormalizedDiscreteWrapper, Animation);
-public:
-    NonNormalizedDiscreteWrapper(CSSPropertyID property, T (RenderStyle::*getter)() const, void (RenderStyle::*setter)(T))
-        : Wrapper<T>(property, getter, setter)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle&, const RenderStyle&, CompositeOperation) const final
-    {
-        return false;
-    }
 };
 
 class FontFeatureSettingsWrapper final : public DiscreteFontDescriptionWrapper {
@@ -615,8 +498,6 @@ private:
     }
 };
 
-// MARK: - Customized Wrappers
-
 #if ENABLE(VARIATION_FONTS)
 
 class FontVariationSettingsWrapper final : public Wrapper<FontVariationSettings> {
@@ -655,267 +536,113 @@ public:
 
 #endif
 
-class StyleImageWrapper final : public RefCountedWrapper<StyleImage> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(StyleImageWrapper, Animation);
+class FontWeightWrapper final : public Wrapper<FontSelectionValue> {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontWeightWrapper, Animation);
 public:
-    StyleImageWrapper(CSSPropertyID property, StyleImage* (RenderStyle::*getter)() const, void (RenderStyle::*setter)(RefPtr<StyleImage>&&))
-        : RefCountedWrapper(property, getter, setter)
+    FontWeightWrapper()
+        : Wrapper(CSSPropertyFontWeight, &RenderStyle::fontWeight, &RenderStyle::setFontWeight)
     {
     }
 
-    bool equals(const RenderStyle& a, const RenderStyle& b) const final
+    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
     {
-        if (&a == &b)
-            return true;
+        (destination.*m_setter)(FontSelectionValue(std::clamp(blendFunc(static_cast<float>(this->value(from)), static_cast<float>(this->value(to)), context), 1.0f, 1000.0f)));
+    }
+};
 
-        auto* imageA = value(a);
-        auto* imageB = value(b);
-        return arePointingToEqualData(imageA, imageB);
+class FontStyleWrapper final : public Wrapper<std::optional<FontSelectionValue>> {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontStyleWrapper, Animation);
+public:
+    FontStyleWrapper()
+        : Wrapper(CSSPropertyFontStyle, &RenderStyle::fontItalic, &RenderStyle::setFontItalic)
+    {
     }
 
     bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
     {
-        return value(from) && value(to);
+        return from.fontDescription().fontStyleAxis() == FontStyleAxis::slnt && to.fontDescription().fontStyleAxis() == FontStyleAxis::slnt;
+    }
+
+    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
+    {
+        auto blendedStyleAxis = FontStyleAxis::slnt;
+        if (context.isDiscrete)
+            blendedStyleAxis = (context.progress < 0.5 ? from : to).fontDescription().fontStyleAxis();
+
+        auto fromFontItalic = from.fontItalic();
+        auto toFontItalic = to.fontItalic();
+        auto blendedFontItalic = context.progress < 0.5 ? fromFontItalic : toFontItalic;
+        if (!context.isDiscrete)
+            blendedFontItalic = blendFunc(fromFontItalic, toFontItalic, context);
+
+        auto description = destination.fontDescription();
+        description.setItalic(blendedFontItalic);
+        description.setFontStyleAxis(blendedStyleAxis);
+        destination.setFontDescription(WTFMove(description));
     }
 };
 
-class TransformOperationsWrapper final : public WrapperWithGetter<const TransformOperations&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(TransformOperationsWrapper, Animation);
+class FontSizeAdjustWrapper final : public WrapperWithGetter<FontSizeAdjust> {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontSizeAdjustWrapper, Animation);
 public:
-    TransformOperationsWrapper()
-        : WrapperWithGetter<const TransformOperations&>(CSSPropertyTransform, &RenderStyle::transform)
+    FontSizeAdjustWrapper()
+        : WrapperWithGetter(CSSPropertyFontSizeAdjust, &RenderStyle::fontSizeAdjust)
     {
     }
 
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation compositeOperation) const override
+    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
     {
-        if (compositeOperation == CompositeOperation::Replace)
-            return !this->value(to).shouldFallBackToDiscreteAnimation(this->value(from), { });
-        return true;
+        auto fromFontSizeAdjust = from.fontSizeAdjust();
+        auto toFontSizeAdjust = to.fontSizeAdjust();
+        return fromFontSizeAdjust.metric == toFontSizeAdjust.metric
+            && fromFontSizeAdjust.value && toFontSizeAdjust.value;
     }
 
-    bool requiresInterpolationForAccumulativeIteration(const RenderStyle&, const RenderStyle&) const final
+    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
     {
-        return true;
-    }
+        auto blendedFontSizeAdjust = [&]() -> FontSizeAdjust {
+            if (context.isDiscrete)
+                return (!context.progress ? from : to).fontSizeAdjust();
 
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const override
-    {
-        destination.setTransform(blendFunc(this->value(from), this->value(to), context));
+            ASSERT(from.fontSizeAdjust().value && to.fontSizeAdjust().value);
+            auto blendedAdjust = blendFunc(*from.fontSizeAdjust().value, *to.fontSizeAdjust().value, context);
+
+            ASSERT(from.fontSizeAdjust().metric == to.fontSizeAdjust().metric);
+            return { to.fontSizeAdjust().metric, FontSizeAdjust::ValueType::Number, std::max(blendedAdjust, 0.0f) };
+        };
+
+        destination.setFontSizeAdjust(blendedFontSizeAdjust());
     }
 };
 
-class FilterWrapper final : public WrapperWithGetter<const FilterOperations&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FilterWrapper, Animation);
+class LineHeightWrapper final : public LengthWrapper {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(LineHeightWrapper, Animation);
 public:
-    FilterWrapper(CSSPropertyID property, const FilterOperations& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(FilterOperations&&))
-        : WrapperWithGetter<const FilterOperations&>(property, getter)
-        , m_setter(setter)
+    LineHeightWrapper()
+        : LengthWrapper(CSSPropertyLineHeight, &RenderStyle::specifiedLineHeight, &RenderStyle::setLineHeight)
     {
     }
 
     bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation compositeOperation) const final
     {
-        return value(from).canInterpolate(value(to), compositeOperation);
-    }
+        // We must account for how BuilderConverter::convertLineHeight() deals with line-height values:
+        // - "normal" is converted to LengthType::Percent with a -100 value
+        // - <number> values are converted to LengthType::Percent
+        // - <length-percentage> values are converted to LengthType::Fixed
+        // This means that animating between "normal" and a "<number>" would work with LengthWrapper::canInterpolate()
+        // since it would see two LengthType::Percent values. So if either value is "normal" we cannot interpolate since those
+        // values are either equal or of incompatible types.
+        auto normalLineHeight = RenderStyle::initialLineHeight();
+        if (value(from) == normalLineHeight || value(to) == normalLineHeight)
+            return false;
 
-    bool requiresInterpolationForAccumulativeIteration(const RenderStyle&, const RenderStyle&) const final
-    {
-        return true;
+        // The default logic will now apply since <number> and <length-percentage> values
+        // are converted to different LengthType values.
+        return LengthWrapper::canInterpolate(from, to, compositeOperation);
     }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        (destination.*m_setter)(blendFunc(value(from), value(to), context));
-    }
-
-    void (RenderStyle::*m_setter)(FilterOperations&&);
 };
 
-inline const BoxShadow& shadowForInterpolation(const BoxShadow& shadowToMatch)
-{
-    static NeverDestroyed<BoxShadow> defaultShadowData {
-        BoxShadow {
-            .color = { WebCore::Color::transparentBlack },
-            .location = { { 0 }, { 0 } },
-            .blur = { 0 },
-            .spread = { 0 },
-            .inset = std::nullopt,
-            .isWebkitBoxShadow = false
-        }
-    };
-    static NeverDestroyed<BoxShadow> defaultInsetShadowData {
-        BoxShadow {
-            .color = { WebCore::Color::transparentBlack },
-            .location = { { 0 }, { 0 } },
-            .blur = { 0 },
-            .spread = { 0 },
-            .inset = CSS::Keyword::Inset { },
-            .isWebkitBoxShadow = false
-        }
-    };
-    static NeverDestroyed<BoxShadow> defaultWebKitBoxShadowData {
-        BoxShadow {
-            .color = { WebCore::Color::transparentBlack },
-            .location = { { 0 }, { 0 } },
-            .blur = { 0 },
-            .spread = { 0 },
-            .inset = std::nullopt,
-            .isWebkitBoxShadow = true
-        }
-    };
-    static NeverDestroyed<BoxShadow> defaultInsetWebKitBoxShadowData {
-        BoxShadow {
-            .color = { WebCore::Color::transparentBlack },
-            .location = { { 0 }, { 0 } },
-            .blur = { 0 },
-            .spread = { 0 },
-            .inset = CSS::Keyword::Inset { },
-            .isWebkitBoxShadow = true
-        }
-    };
-
-    if (isInset(shadowToMatch))
-        return shadowToMatch.isWebkitBoxShadow ? defaultInsetWebKitBoxShadowData.get() : defaultInsetShadowData.get();
-    else
-        return shadowToMatch.isWebkitBoxShadow ? defaultWebKitBoxShadowData.get() : defaultShadowData.get();
-}
-
-inline const TextShadow& shadowForInterpolation(const TextShadow&)
-{
-    static NeverDestroyed<TextShadow> defaultShadowData {
-        TextShadow {
-            .color = { WebCore::Color::transparentBlack },
-            .location = { { 0 }, { 0 } },
-            .blur = { 0 },
-        }
-    };
-    return defaultShadowData.get();
-}
-
-template<typename ShadowListType> class ShadowWrapper final : public WrapperWithGetter<const ShadowListType&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(ShadowWrapper, Animation);
-public:
-    using ShadowType = typename ShadowListType::value_type;
-
-    ShadowWrapper(CSSPropertyID property, const ShadowListType& (RenderStyle::*getter)() const, void (RenderStyle::*setter)(ShadowListType&&))
-        : WrapperWithGetter<const ShadowListType&>(property, getter)
-        , m_setter(setter)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& fromStyle, const RenderStyle& toStyle, CompositeOperation compositeOperation) const final
-    {
-        if (compositeOperation != CompositeOperation::Replace)
-            return true;
-
-        // The only scenario where we can't interpolate is if specified items don't have the same shadow style.
-
-        auto& fromShadowList = this->value(fromStyle);
-        auto& toShadowList = this->value(toStyle);
-
-        auto fromLength = fromShadowList.size();
-        auto toLength = toShadowList.size();
-
-        // FIXME: Something like LLVM ADT's zip_shortest (https://llvm.org/doxygen/structllvm_1_1detail_1_1zip__shortest.html) would allow this to be done without indexing:
-        //
-        // return std::ranges::all_of(
-        //     zip_shortest(makeReversedRange(fromShadowList), makeReversedRange(toShadowList)),
-        //     [](const auto& pair) {
-        //         return shadowStyle(std::get<0>(pair)) == shadowStyle(std::get<1>(pair));
-        //     }
-        // );
-
-        size_t minLength = std::min(fromLength, toLength);
-        for (size_t i = 0; i < minLength; ++i) {
-            auto fromIndex = fromLength - i - 1;
-            auto toIndex = toLength - i - 1;
-            if (shadowStyle(fromShadowList[fromIndex]) != shadowStyle(toShadowList[toIndex]))
-                return false;
-        }
-        return true;
-    }
-
-    bool requiresInterpolationForAccumulativeIteration(const RenderStyle&, const RenderStyle&) const final
-    {
-        return true;
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& fromStyle, const RenderStyle& toStyle, const Context& context) const final
-    {
-        auto& fromShadowList = this->value(fromStyle);
-        auto& toShadowList = this->value(toStyle);
-
-        if (context.isDiscrete) {
-            ASSERT(!context.progress || context.progress == 1.0);
-            (destination.*m_setter)(ShadowListType { context.progress ? toShadowList : fromShadowList });
-            return;
-        }
-
-        auto fromLength = fromShadowList.size();
-        auto toLength = toShadowList.size();
-
-        if (!fromLength && !toLength)
-            (destination.*m_setter)(CSS::Keyword::None { });
-        else if (fromLength == toLength)
-            (destination.*m_setter)(blendMatchedShadowLists(fromShadowList, toShadowList, fromLength, fromStyle, toStyle, context));
-        else
-            (destination.*m_setter)(blendMismatchedShadowLists(fromShadowList, toShadowList, fromLength, toLength, fromStyle, toStyle, context));
-    }
-
-    ShadowListType addShadowLists(const ShadowListType& fromShadowList, const ShadowListType& toShadowList, size_t fromLength, size_t toLength) const
-    {
-        auto combinedSize = fromLength + toLength;
-        return { FixedVector<ShadowType>::createWithSizeFromGenerator(combinedSize, [&](auto index) -> ShadowType {
-            if (index < toLength)
-                return toShadowList[index];
-            return fromShadowList[index - toLength];
-        }) };
-    }
-
-    ShadowListType blendMatchedShadowLists(const ShadowListType& fromShadowList, const ShadowListType& toShadowList, size_t length, const RenderStyle& fromStyle, const RenderStyle& toStyle, const Context& context) const
-    {
-        // from or to might be empty in which case we don't want to do additivity, but do replace instead.
-        if (!fromShadowList.isNone() && !toShadowList.isNone() && context.compositeOperation == CompositeOperation::Add)
-            return addShadowLists(fromShadowList, toShadowList, length, length);
-
-        return { FixedVector<ShadowType>::createWithSizeFromGenerator(length, [&](auto index) -> ShadowType {
-            return Style::blend(fromShadowList[index], toShadowList[index], fromStyle, toStyle, context);
-        }) };
-    }
-
-    ShadowListType blendMismatchedShadowLists(const ShadowListType& fromShadowList, const ShadowListType& toShadowList, size_t fromLength, size_t toLength, const RenderStyle& fromStyle, const RenderStyle& toStyle, const Context& context) const
-    {
-        if (!fromShadowList.isNone() && !toShadowList.isNone() && context.compositeOperation != CompositeOperation::Replace)
-            return addShadowLists(fromShadowList, toShadowList, fromLength, toLength);
-
-        auto maxLength = std::max(fromLength, toLength);
-        return { FixedVector<ShadowType>::createWithSizeFromGenerator(maxLength, [&](auto index) -> ShadowType {
-            auto indexFromEnd = maxLength - index - 1;
-            bool hasFrom = indexFromEnd < fromLength;
-            bool hasTo = indexFromEnd < toLength;
-
-            if (hasFrom && hasTo) {
-                const auto& fromShadow = fromShadowList[index - (maxLength - fromLength)];
-                const auto& toShadow = toShadowList[index - (maxLength - toLength)];
-                return Style::blend(fromShadow, toShadow, fromStyle, toStyle, context);
-            } else if (hasFrom) {
-                const auto& fromShadow = fromShadowList[index - (maxLength - fromLength)];
-                const auto& toShadow = shadowForInterpolation(fromShadow);
-                return Style::blend(fromShadow, toShadow, fromStyle, toStyle, context);
-            } else if (hasTo) {
-                const auto& toShadow = toShadowList[index - (maxLength - toLength)];
-                const auto& fromShadow = shadowForInterpolation(toShadow);
-                return Style::blend(fromShadow, toShadow, fromStyle, toStyle, context);
-            }
-
-            RELEASE_ASSERT_NOT_REACHED();
-        }) };
-    }
-
-private:
-    void (RenderStyle::*m_setter)(ShadowListType&&);
-};
+// MARK: - Color Property Wrappers
 
 class ColorWrapper final : public WrapperWithGetter<const WebCore::Color&> {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(ColorWrapper, Animation);
@@ -1060,133 +787,7 @@ private:
     }
 };
 
-class FontWeightWrapper final : public Wrapper<FontSelectionValue> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontWeightWrapper, Animation);
-public:
-    FontWeightWrapper()
-        : Wrapper(CSSPropertyFontWeight, &RenderStyle::fontWeight, &RenderStyle::setFontWeight)
-    {
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        (destination.*m_setter)(FontSelectionValue(std::clamp(blendFunc(static_cast<float>(this->value(from)), static_cast<float>(this->value(to)), context), 1.0f, 1000.0f)));
-    }
-};
-
-class FontStyleWrapper final : public Wrapper<std::optional<FontSelectionValue>> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontStyleWrapper, Animation);
-public:
-    FontStyleWrapper()
-        : Wrapper(CSSPropertyFontStyle, &RenderStyle::fontItalic, &RenderStyle::setFontItalic)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        return from.fontDescription().fontStyleAxis() == FontStyleAxis::slnt && to.fontDescription().fontStyleAxis() == FontStyleAxis::slnt;
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        auto blendedStyleAxis = FontStyleAxis::slnt;
-        if (context.isDiscrete)
-            blendedStyleAxis = (context.progress < 0.5 ? from : to).fontDescription().fontStyleAxis();
-
-        auto fromFontItalic = from.fontItalic();
-        auto toFontItalic = to.fontItalic();
-        auto blendedFontItalic = context.progress < 0.5 ? fromFontItalic : toFontItalic;
-        if (!context.isDiscrete)
-            blendedFontItalic = blendFunc(fromFontItalic, toFontItalic, context);
-
-        auto description = destination.fontDescription();
-        description.setItalic(blendedFontItalic);
-        description.setFontStyleAxis(blendedStyleAxis);
-        destination.setFontDescription(WTFMove(description));
-    }
-};
-
-class FontSizeAdjustWrapper final : public WrapperWithGetter<FontSizeAdjust> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FontSizeAdjustWrapper, Animation);
-public:
-    FontSizeAdjustWrapper()
-        : WrapperWithGetter(CSSPropertyFontSizeAdjust, &RenderStyle::fontSizeAdjust)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        auto fromFontSizeAdjust = from.fontSizeAdjust();
-        auto toFontSizeAdjust = to.fontSizeAdjust();
-        return fromFontSizeAdjust.metric == toFontSizeAdjust.metric
-            && fromFontSizeAdjust.value && toFontSizeAdjust.value;
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        auto blendedFontSizeAdjust = [&]() -> FontSizeAdjust {
-            if (context.isDiscrete)
-                return (!context.progress ? from : to).fontSizeAdjust();
-
-            ASSERT(from.fontSizeAdjust().value && to.fontSizeAdjust().value);
-            auto blendedAdjust = blendFunc(*from.fontSizeAdjust().value, *to.fontSizeAdjust().value, context);
-
-            ASSERT(from.fontSizeAdjust().metric == to.fontSizeAdjust().metric);
-            return { to.fontSizeAdjust().metric, FontSizeAdjust::ValueType::Number, std::max(blendedAdjust, 0.0f) };
-        };
-
-        destination.setFontSizeAdjust(blendedFontSizeAdjust());
-    }
-};
-
-class LineHeightWrapper final : public LengthWrapper {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(LineHeightWrapper, Animation);
-public:
-    LineHeightWrapper()
-        : LengthWrapper(CSSPropertyLineHeight, &RenderStyle::specifiedLineHeight, &RenderStyle::setLineHeight)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation compositeOperation) const final
-    {
-        // We must account for how BuilderConverter::convertLineHeight() deals with line-height values:
-        // - "normal" is converted to LengthType::Percent with a -100 value
-        // - <number> values are converted to LengthType::Percent
-        // - <length-percentage> values are converted to LengthType::Fixed
-        // This means that animating between "normal" and a "<number>" would work with LengthWrapper::canInterpolate()
-        // since it would see two LengthType::Percent values. So if either value is "normal" we cannot interpolate since those
-        // values are either equal or of incompatible types.
-        auto normalLineHeight = RenderStyle::initialLineHeight();
-        if (value(from) == normalLineHeight || value(to) == normalLineHeight)
-            return false;
-
-        // The default logic will now apply since <number> and <length-percentage> values
-        // are converted to different LengthType values.
-        return LengthWrapper::canInterpolate(from, to, compositeOperation);
-    }
-};
-
-class TabSizeWrapper final : public Wrapper<const TabSize&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(TabSizeWrapper, Animation);
-public:
-    TabSizeWrapper()
-        : Wrapper(CSSPropertyTabSize, &RenderStyle::tabSize, &RenderStyle::setTabSize)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        return value(from).isSpaces() == value(to).isSpaces();
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        if (context.isDiscrete)
-            (destination.*m_setter)(context.progress ? value(to) : value(from));
-        else
-            Wrapper::interpolate(destination, from, to, context);
-    }
-};
+// MARK: - Other Custom Wrappers
 
 class CounterWrapper final : public WrapperBase {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(CounterWrapper, Animation);
@@ -1279,76 +880,10 @@ public:
     }
 };
 
-template<typename T, typename GetterType = T, typename SetterType = T>
-class DiscreteSVGWrapper final : public WrapperBase {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(DiscreteSVGWrapper, Animation);
-public:
-    DiscreteSVGWrapper(CSSPropertyID property, GetterType (SVGRenderStyle::*getter)() const, void (SVGRenderStyle::*setter)(SetterType))
-        : WrapperBase(property)
-        , m_getter(getter)
-        , m_setter(setter)
-    {
-    }
-
-    bool equals(const RenderStyle& a, const RenderStyle& b) const final
-    {
-        return this->value(a) == this->value(b);
-    }
-
-    bool canInterpolate(const RenderStyle&, const RenderStyle&, CompositeOperation) const final
-    {
-        return false;
-    }
-
-    void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
-    {
-        ASSERT(!context.progress || context.progress == 1.0);
-        (destination.accessSVGStyle().*this->m_setter)(T { this->value(context.progress ? to : from) });
-    }
-
-#if !LOG_DISABLED
-    void log(const RenderStyle&, const RenderStyle&, const RenderStyle&, double) const final
-    {
-    }
-#endif
-
-private:
-    T value(const RenderStyle& style) const
-    {
-        return (style.svgStyle().*this->m_getter)();
-    }
-
-    GetterType (SVGRenderStyle::*m_getter)() const;
-    void (SVGRenderStyle::*m_setter)(SetterType);
-};
-
-// Deduction guide for getter/setters that return and take values.
-template<typename T>
-DiscreteSVGWrapper(CSSPropertyID, T (SVGRenderStyle::*getter)() const, void (SVGRenderStyle::*setter)(T)) -> DiscreteSVGWrapper<T, T, T>;
-
-// Deduction guide for getter/setters that return const references and take r-value references.
-template<typename T>
-DiscreteSVGWrapper(CSSPropertyID, const T& (SVGRenderStyle::*getter)() const, void (SVGRenderStyle::*setter)(T&&)) -> DiscreteSVGWrapper<T, const T&, T&&>;
-
-class DWrapper final : public RefCountedWrapper<StylePathData> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(DWrapper, Animation);
-public:
-    DWrapper()
-        : RefCountedWrapper(CSSPropertyD, &RenderStyle::d, &RenderStyle::setD)
-    {
-    }
-
-    bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
-    {
-        auto* fromValue = value(from);
-        auto* toValue = value(to);
-        return fromValue && toValue && fromValue->canBlend(*toValue);
-    }
-};
-
 // MARK: - FillLayer Wrappers
 
 // Wrapper base class for an animatable property in a FillLayer
+template<typename FillLayerType>
 class FillLayerWrapperBase {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerWrapperBase, Animation);
 public:
@@ -1360,296 +895,156 @@ public:
 
     CSSPropertyID property() const { return m_property; }
 
-    virtual bool equals(const FillLayer*, const FillLayer*) const = 0;
-    virtual void interpolate(FillLayer*, const FillLayer*, const FillLayer*, const Context&) const = 0;
-    virtual bool canInterpolate(const FillLayer*, const FillLayer*) const { return true; }
+    virtual bool equals(const FillLayerType&, const FillLayerType&) const = 0;
+    virtual void interpolate(FillLayerType&, const FillLayerType&, const FillLayerType&, const Context&) const = 0;
+    virtual bool canInterpolate(const FillLayerType&, const FillLayerType&) const { return true; }
 #if !LOG_DISABLED
-    virtual void log(const FillLayer* destination, const FillLayer*, const FillLayer*, double) const = 0;
+    virtual void log(const FillLayerType& destination, const FillLayerType&, const FillLayerType&, double) const = 0;
 #endif
 
 private:
     CSSPropertyID m_property;
 };
 
-template<typename T>
-class FillLayerWrapperWithGetter : public FillLayerWrapperBase {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerWrapperWithGetter, Animation);
-    WTF_MAKE_NONCOPYABLE(FillLayerWrapperWithGetter);
-public:
-    FillLayerWrapperWithGetter(CSSPropertyID property, T (FillLayer::*getter)() const)
-        : FillLayerWrapperBase(property)
-        , m_getter(getter)
-    {
-    }
-
-protected:
-    bool equals(const FillLayer* a, const FillLayer* b) const override
-    {
-        if (a == b)
-            return true;
-        if (!a || !b)
-            return false;
-        return value(a) == value(b);
-    }
-
-    T value(const FillLayer* layer) const
-    {
-        return (layer->*m_getter)();
-    }
-
-#if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const override
-    {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << property() << " from " << value(from) << " to " << value(to) << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << value(destination));
-    }
-#endif
-
-private:
-    T (FillLayer::*m_getter)() const;
-};
-
-template<typename T>
-class FillLayerWrapper final : public FillLayerWrapperWithGetter<const T&> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerWrapper, Animation);
-public:
-    FillLayerWrapper(CSSPropertyID property, const T& (FillLayer::*getter)() const, void (FillLayer::*setter)(T))
-        : FillLayerWrapperWithGetter<const T&>(property, getter)
-        , m_setter(setter)
-    {
-    }
-
-private:
-    void interpolate(FillLayer* destination, const FillLayer* from, const FillLayer* to, const Context& context) const final
-    {
-        (destination->*this->m_setter)(blendFunc(this->value(from), this->value(to), context));
-    }
-
-    bool canInterpolate(const FillLayer* from, const FillLayer* to) const final
-    {
-        return canInterpolateLengthVariants(this->value(from), this->value(to));
-    }
-
-#if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const final
-    {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << FillLayerWrapperWithGetter<const T&>::property()
-            << " from " << FillLayerWrapperWithGetter<const T&>::value(from)
-            << " to " << FillLayerWrapperWithGetter<const T&>::value(to)
-            << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << FillLayerWrapperWithGetter<const T&>::value(destination));
-    }
-#endif
-
-    void (FillLayer::*m_setter)(T);
-};
-
-template<typename StyleType>
-class FillLayerStyleTypeWrapper final : public FillLayerWrapperBase {
+template<typename StyleType, typename FillLayerType>
+class FillLayerStyleTypeWrapper final : public FillLayerWrapperBase<FillLayerType> {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerStyleTypeWrapper, Animation);
 public:
-    FillLayerStyleTypeWrapper(CSSPropertyID property, const StyleType& (FillLayer::*getter)() const, void (FillLayer::*setter)(StyleType&&))
-        : FillLayerWrapperBase(property)
+    FillLayerStyleTypeWrapper(CSSPropertyID property, const StyleType& (FillLayerType::*getter)() const, void (FillLayerType::*setter)(StyleType&&))
+        : FillLayerWrapperBase<FillLayerType>(property)
         , m_getter(getter)
         , m_setter(setter)
     {
     }
 
-    bool equals(const FillLayer* from, const FillLayer* to) const override
+    bool equals(const FillLayerType& from, const FillLayerType& to) const override
     {
-        if (from == to)
+        if (&from == &to)
             return true;
-        if (!from || !to)
-            return false;
         return Style::equalsForBlending(value(from), value(to));
     }
 
-    bool canInterpolate(const FillLayer* from, const FillLayer* to) const override final
+    bool canInterpolate(const FillLayerType& from, const FillLayerType& to) const override final
     {
         return Style::canBlend(value(from), value(to));
     }
 
-    void interpolate(FillLayer* destination, const FillLayer* from, const FillLayer* to, const Context& context) const override final
+    void interpolate(FillLayerType& destination, const FillLayerType& from, const FillLayerType& to, const Context& context) const override final
     {
-        (destination->*m_setter)(Style::blend(value(from), value(to), context));
+        (destination.*m_setter)(Style::blend(value(from), value(to), context));
     }
 
 #if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const override final
+    void log(const FillLayerType& destination, const FillLayerType& from, const FillLayerType& to, double progress) const override final
     {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << property() << " from " << value(from) << " to " << value(to) << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << value(destination));
+        LOG_WITH_STREAM(Animations, stream << "  blending " << this->property() << " from " << value(from) << " to " << value(to) << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << value(destination));
     }
 #endif
 
 private:
-    const StyleType& value(const FillLayer* layer) const
+    const StyleType& value(const FillLayerType& layer) const
     {
-        return (layer->*m_getter)();
+        return (layer.*m_getter)();
     }
 
-    const StyleType& (FillLayer::*m_getter)() const;
-    void (FillLayer::*m_setter)(StyleType&&);
+    const StyleType& (FillLayerType::*m_getter)() const;
+    void (FillLayerType::*m_setter)(StyleType&&);
 };
 
-template<typename T>
-class FillLayerRefCountedWrapper : public FillLayerWrapperWithGetter<T*> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerRefCountedWrapper, Animation);
-public:
-    FillLayerRefCountedWrapper(CSSPropertyID property, T* (FillLayer::*getter)() const, void (FillLayer::*setter)(RefPtr<T>&&))
-        : FillLayerWrapperWithGetter<T*>(property, getter)
-        , m_setter(setter)
-    {
-    }
-
-private:
-    void interpolate(FillLayer* destination, const FillLayer* from, const FillLayer* to, const Context& context) const final
-    {
-        (destination->*this->m_setter)(blendFunc(this->value(from), this->value(to), context));
-    }
-
-#if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const override
-    {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << FillLayerWrapperWithGetter<T*>::property()
-            << " from " << FillLayerWrapperWithGetter<T*>::value(from)
-            << " to " << FillLayerWrapperWithGetter<T*>::value(to)
-            << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << FillLayerWrapperWithGetter<T*>::value(destination));
-    }
-#endif
-
-    void (FillLayer::*m_setter)(RefPtr<T>&&);
-};
-
-class FillLayerStyleImageWrapper final : public FillLayerRefCountedWrapper<StyleImage> {
-    WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayerStyleImageWrapper, Animation);
-public:
-    FillLayerStyleImageWrapper(CSSPropertyID property, StyleImage* (FillLayer::*getter)() const, void (FillLayer::*setter)(RefPtr<StyleImage>&&))
-        : FillLayerRefCountedWrapper(property, getter, setter)
-    {
-    }
-
-private:
-    bool equals(const FillLayer* a, const FillLayer* b) const final
-    {
-        if (a == b)
-            return true;
-        if (!a || !b)
-            return false;
-        return arePointingToEqualData(value(a), value(b));
-    }
-
-    bool canInterpolate(const FillLayer* from, const FillLayer* to) const final
-    {
-        if (property() == CSSPropertyMaskImage)
-            return false;
-        return value(from) && value(to);
-    }
-
-#if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const final
-    {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << property() << " from " << this->value(from) << " to " << this->value(to) << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << value(destination));
-    }
-#endif
-};
-
-template<typename T>
-class DiscreteFillLayerWrapper final : public FillLayerWrapperBase {
+template<typename T, typename FillLayerType, typename GetterType = T, typename SetterType = T>
+class DiscreteFillLayerWrapper final : public FillLayerWrapperBase<FillLayerType> {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(DiscreteFillLayerWrapper, Animation);
 public:
-    DiscreteFillLayerWrapper(CSSPropertyID property, T (FillLayer::*getter)() const, void (FillLayer::*setter)(T))
-        : FillLayerWrapperBase(property)
+    DiscreteFillLayerWrapper(CSSPropertyID property, GetterType (FillLayerType::*getter)() const, void (FillLayerType::*setter)(SetterType))
+        : FillLayerWrapperBase<FillLayerType>(property)
         , m_getter(getter)
         , m_setter(setter)
     {
     }
 
-private:
-    bool equals(const FillLayer* a, const FillLayer* b) const final
+    bool equals(const FillLayerType& a, const FillLayerType& b) const final
     {
-        return (a->*m_getter)() == (b->*m_getter)();
+        return value(a) == value(b);
     }
 
-    bool canInterpolate(const FillLayer*, const FillLayer*) const final
+    bool canInterpolate(const FillLayerType&, const FillLayerType&) const final
     {
         return false;
     }
 
-    void interpolate(FillLayer* destination, const FillLayer* from, const FillLayer* to, const Context& context) const final
+    void interpolate(FillLayerType& destination, const FillLayerType& from, const FillLayerType& to, const Context& context) const final
     {
         ASSERT(!context.progress || context.progress == 1.0);
-        (destination->*m_setter)(((context.progress ? to : from)->*m_getter)());
+        (destination.*m_setter)(T { context.progress ? value(to) : value(from) });
     }
 
 #if !LOG_DISABLED
-    void log(const FillLayer* destination, const FillLayer* from, const FillLayer* to, double progress) const final
+    void log(const FillLayerType& destination, const FillLayerType& from, const FillLayerType& to, double progress) const final
     {
-        LOG_WITH_STREAM(Animations, stream << "  blending " << property() << " from " << (from->*m_getter)() << " to " << (to->*m_getter)() << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << (destination->*m_getter)());
+        LOG_WITH_STREAM(Animations, stream << "  blending " << this->property() << " from " << value(from) << " to " << value(to) << " at " << TextStream::FormatNumberRespectingIntegers(progress) << " -> " << value(destination));
     }
 #endif
 
-    T (FillLayer::*m_getter)() const;
-    void (FillLayer::*m_setter)(T);
+private:
+    GetterType value(const FillLayerType& fillLayer) const
+    {
+        return (fillLayer.*m_getter)();
+    }
+
+    GetterType (FillLayerType::*m_getter)() const;
+    void (FillLayerType::*m_setter)(SetterType);
 };
 
+// Deduction guide for getter/setters that return and take values.
+template<typename T, typename FillLayerType>
+DiscreteFillLayerWrapper(CSSPropertyID, T (FillLayerType::*getter)() const, void (FillLayerType::*setter)(T)) -> DiscreteFillLayerWrapper<T, FillLayerType, T, T>;
+
+// Deduction guide for getter/setters that return const references and take r-value references.
+template<typename T, typename FillLayerType>
+DiscreteFillLayerWrapper(CSSPropertyID, const T& (FillLayerType::*getter)() const, void (FillLayerType::*setter)(T&&)) -> DiscreteFillLayerWrapper<T, FillLayerType, const T&, T&&>;
+
+// Deduction guide for getter/setters that return values and take r-value references.
+template<typename T, typename FillLayerType>
+DiscreteFillLayerWrapper(CSSPropertyID, T (FillLayerType::*getter)() const, void (FillLayerType::*setter)(T&&)) -> DiscreteFillLayerWrapper<T, FillLayerType, T, T&&>;
+
+template<typename T, typename RepeatedValueWrapper>
 class FillLayersWrapper final : public WrapperBase {
     WTF_DEPRECATED_MAKE_FAST_ALLOCATED_WITH_HEAP_IDENTIFIER(FillLayersWrapper, Animation);
 public:
-    typedef const FillLayer& (RenderStyle::*LayersGetter)() const;
-    typedef FillLayer& (RenderStyle::*LayersAccessor)();
+    using Layers = T;
+    using Layer = typename Layers::Layer;
 
-    FillLayersWrapper(CSSPropertyID property, LayersGetter getter, LayersAccessor accessor)
+    using LayersGetter = const Layers& (RenderStyle::*)() const;
+    using LayersAccessor = Layers& (RenderStyle::*)();
+    using LayersSetter = void (RenderStyle::*)(Layers&&);
+
+    FillLayersWrapper(CSSPropertyID property, LayersGetter getter, LayersAccessor accessor, LayersSetter setter, RepeatedValueWrapper repeatedValueWrapper)
         : WrapperBase(property)
         , m_layersGetter(getter)
         , m_layersAccessor(accessor)
+        , m_layersSetter(setter)
+        , m_repeatedValueWrapper(repeatedValueWrapper)
     {
-        switch (property) {
-        case CSSPropertyBackgroundPositionX:
-        case CSSPropertyWebkitMaskPositionX:
-            m_fillLayerWrapper = makeUnique<FillLayerStyleTypeWrapper<FillPositionX>>(property, &FillLayer::xPosition, &FillLayer::setXPosition);
-            break;
-        case CSSPropertyBackgroundPositionY:
-        case CSSPropertyWebkitMaskPositionY:
-            m_fillLayerWrapper = makeUnique<FillLayerStyleTypeWrapper<FillPositionY>>(property, &FillLayer::yPosition, &FillLayer::setYPosition);
-            break;
-        case CSSPropertyBackgroundSize:
-        case CSSPropertyWebkitBackgroundSize:
-        case CSSPropertyMaskSize:
-            m_fillLayerWrapper = makeUnique<FillLayerWrapper<LengthSize>>(property, &FillLayer::sizeLength, &FillLayer::setSizeLength);
-            break;
-        case CSSPropertyBackgroundImage:
-        case CSSPropertyMaskImage:
-            m_fillLayerWrapper = makeUnique<FillLayerStyleImageWrapper>(property, &FillLayer::image, &FillLayer::setImage);
-            break;
-        case CSSPropertyMaskClip:
-            m_fillLayerWrapper = makeUnique<DiscreteFillLayerWrapper<FillBox>>(property, &FillLayer::clip, &FillLayer::setClip);
-            break;
-        case CSSPropertyMaskOrigin:
-            m_fillLayerWrapper = makeUnique<DiscreteFillLayerWrapper<FillBox>>(property, &FillLayer::origin, &FillLayer::setOrigin);
-            break;
-        case CSSPropertyMaskComposite:
-            m_fillLayerWrapper = makeUnique<DiscreteFillLayerWrapper<CompositeOperator>>(property, &FillLayer::composite, &FillLayer::setComposite);
-            break;
-        case CSSPropertyMaskMode:
-            m_fillLayerWrapper = makeUnique<DiscreteFillLayerWrapper<MaskMode>>(property, &FillLayer::maskMode, &FillLayer::setMaskMode);
-            break;
-        default:
-            break;
-        }
     }
 
-    bool equals(const RenderStyle& a, const RenderStyle& b) const final
+    bool equals(const RenderStyle& from, const RenderStyle& to) const final
     {
-        if (&a == &b)
+        if (&from == &to)
             return true;
 
-        auto* fromLayer = &(a.*m_layersGetter)();
-        auto* toLayer = &(b.*m_layersGetter)();
+        auto& fromLayers = (from.*m_layersGetter)();
+        auto& toLayers = (to.*m_layersGetter)();
 
-        while (fromLayer && toLayer) {
-            if (!m_fillLayerWrapper->equals(fromLayer, toLayer))
+        auto numberOfFromLayers = fromLayers.size();
+        auto numberOfToLayers = toLayers.size();
+        auto numberOfLayers = std::min(numberOfFromLayers, numberOfToLayers);
+
+        for (size_t i = 0; i < numberOfLayers; ++i) {
+            auto& fromLayer = fromLayers[i];
+            auto& toLayer = toLayers[i];
+
+            if (!m_repeatedValueWrapper.equals(fromLayer, toLayer))
                 return false;
-
-            fromLayer = fromLayer->next();
-            toLayer = toLayer->next();
         }
 
         return true;
@@ -1657,18 +1052,22 @@ public:
 
     bool canInterpolate(const RenderStyle& from, const RenderStyle& to, CompositeOperation) const final
     {
-        auto* fromLayer = &(from.*m_layersGetter)();
-        auto* toLayer = &(to.*m_layersGetter)();
+        auto& fromLayers = (from.*m_layersGetter)();
+        auto& toLayers = (to.*m_layersGetter)();
 
-        while (fromLayer && toLayer) {
-            if (fromLayer->sizeType() != toLayer->sizeType())
+        auto numberOfFromLayers = fromLayers.size();
+        auto numberOfToLayers = toLayers.size();
+        auto numberOfLayers = std::min(numberOfFromLayers, numberOfToLayers);
+
+        for (size_t i = 0; i < numberOfLayers; ++i) {
+            auto& fromLayer = fromLayers[i];
+            auto& toLayer = toLayers[i];
+
+            if (!fromLayer.size().hasSameType(toLayer.size()))
                 return false;
 
-            if (!m_fillLayerWrapper->canInterpolate(fromLayer, toLayer))
+            if (!m_repeatedValueWrapper.canInterpolate(fromLayer, toLayer))
                 return false;
-
-            fromLayer = fromLayer->next();
-            toLayer = toLayer->next();
         }
 
         return true;
@@ -1676,61 +1075,60 @@ public:
 
     void interpolate(RenderStyle& destination, const RenderStyle& from, const RenderStyle& to, const Context& context) const final
     {
-        auto* fromLayer = &(from.*m_layersGetter)();
-        auto* toLayer = &(to.*m_layersGetter)();
-        auto* dstLayer = &(destination.*m_layersAccessor)();
+        auto* fromLayers = &(from.*m_layersGetter)();
+        auto* toLayers = &(to.*m_layersGetter)();
+        auto& destinationLayers = (destination.*m_layersAccessor)();
 
         if (context.isDiscrete) {
             ASSERT(!context.progress || context.progress == 1.0);
-            auto* layer = context.progress ? toLayer : fromLayer;
-            fromLayer = layer;
-            toLayer = layer;
+            auto* layers = context.progress ? toLayers : fromLayers;
+            fromLayers = layers;
+            toLayers = layers;
         }
 
-        size_t layerCount = 0;
-        Vector<FillLayer*> previousDstLayers;
-        FillLayer* previousDstLayer = nullptr;
-        while (fromLayer && toLayer) {
-            if (dstLayer)
-                previousDstLayers.append(dstLayer);
-            else {
-                ASSERT(!previousDstLayers.isEmpty());
-                auto* layerToCopy = previousDstLayers[layerCount % previousDstLayers.size()];
-                previousDstLayer->setNext(layerToCopy->copy());
-                dstLayer = previousDstLayer->next();
-            }
+        auto numberOfFromLayers = fromLayers->size();
+        auto numberOfToLayers = toLayers->size();
+        auto numberOfDestinationLayers = destinationLayers.size();
+        auto numberOfLayers = std::min(numberOfFromLayers, numberOfToLayers);
 
-            dstLayer->setSizeType((context.progress ? toLayer : fromLayer)->sizeType());
-            m_fillLayerWrapper->interpolate(dstLayer, fromLayer, toLayer, context);
-            fromLayer = fromLayer->next();
-            toLayer = toLayer->next();
-
-            previousDstLayer = dstLayer;
-            dstLayer = dstLayer->next();
-            layerCount++;
+        if (numberOfLayers > numberOfDestinationLayers) {
+            (destination.*m_layersSetter)(
+                Layers {
+                    Layers::Container::createWithSizeFromGenerator(numberOfLayers, [&](const auto& i) {
+                        auto destinationLayer = destinationLayers[i % numberOfDestinationLayers];
+                        m_repeatedValueWrapper.interpolate(destinationLayer, (*fromLayers)[i], (*toLayers)[i], context);
+                        return destinationLayer;
+                    })
+                }
+            );
+        } else {
+            for (size_t i = 0; i < numberOfLayers; ++i)
+                m_repeatedValueWrapper.interpolate(destinationLayers[i], (*fromLayers)[i], (*toLayers)[i], context);
         }
     }
 
 #if !LOG_DISABLED
     void log(const RenderStyle& from, const RenderStyle& to, const RenderStyle& destination, double progress) const final
     {
-        auto* fromLayer = &(from.*m_layersGetter)();
-        auto* toLayer = &(to.*m_layersGetter)();
-        auto* dstLayer = &(destination.*m_layersGetter)();
+        auto& fromLayers = (from.*m_layersGetter)();
+        auto& toLayers = (to.*m_layersGetter)();
+        auto& destinationLayers = (destination.*m_layersGetter)();
 
-        while (fromLayer && toLayer && dstLayer) {
-            m_fillLayerWrapper->log(dstLayer, fromLayer, toLayer, progress);
-            fromLayer = fromLayer->next();
-            toLayer = toLayer->next();
-            dstLayer = dstLayer->next();
-        }
+        auto numberOfFromLayers = fromLayers.size();
+        auto numberOfToLayers = toLayers.size();
+        auto numberOfDestinationLayers = destinationLayers.size();
+        auto numberOfLayers = std::min({numberOfFromLayers, numberOfToLayers, numberOfDestinationLayers});
+
+        for (size_t i = 0; i < numberOfLayers; ++i)
+            m_repeatedValueWrapper.log(destinationLayers[i], fromLayers[i], toLayers[i], progress);
     }
 #endif
 
 private:
-    std::unique_ptr<FillLayerWrapperBase> m_fillLayerWrapper;
     LayersGetter m_layersGetter;
     LayersAccessor m_layersAccessor;
+    LayersSetter m_layersSetter;
+    RepeatedValueWrapper m_repeatedValueWrapper;
 };
 
 // MARK: - Shorthand Wrapper

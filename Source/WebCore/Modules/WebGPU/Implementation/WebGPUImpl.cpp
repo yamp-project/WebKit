@@ -28,6 +28,10 @@
 
 #if HAVE(WEBGPU_IMPLEMENTATION)
 
+#include "DDMesh.h"
+#include "DDMeshDescriptor.h"
+#include "DDMeshImpl.h"
+#include "DDVertexAttributeFormat.h"
 #include "WebGPUAdapterImpl.h"
 #include "WebGPUCompositorIntegrationImpl.h"
 #include "WebGPUDowncastConvertToBackingContext.h"
@@ -44,9 +48,10 @@ namespace WebCore::WebGPU {
 
 WTF_MAKE_TZONE_ALLOCATED_IMPL(GPUImpl);
 
-GPUImpl::GPUImpl(WebGPUPtr<WGPUInstance>&& instance, ConvertToBackingContext& convertToBackingContext)
+GPUImpl::GPUImpl(WebGPUPtr<WGPUInstance>&& instance, ConvertToBackingContext& convertToBackingContext, DDModel::ConvertToBackingContext& modelConvertToBackingContext)
     : m_backing(WTFMove(instance))
     , m_convertToBackingContext(convertToBackingContext)
+    , m_modelConvertToBackingContext(modelConvertToBackingContext)
 {
 }
 
@@ -64,7 +69,6 @@ void GPUImpl::requestAdapter(const RequestAdapterOptions& options, CompletionHan
     Ref convertToBackingContext = m_convertToBackingContext;
 
     WGPURequestAdapterOptions backingOptions {
-        .nextInChain = nullptr,
         .compatibleSurface = nullptr,
 #if CPU(X86_64)
         .powerPreference = WGPUPowerPreference_HighPerformance,
@@ -85,6 +89,49 @@ void GPUImpl::requestAdapter(const RequestAdapterOptions& options, CompletionHan
     wgpuInstanceRequestAdapter(m_backing.get(), &backingOptions, &requestAdapterCallback, Block_copy(blockPtr.get())); // Block_copy is matched with Block_release above in requestAdapterCallback().
 }
 
+static Vector<WGPUDDVertexAttributeFormat> convertToBacking(const Vector<DDModel::DDVertexAttributeFormat>& descriptor)
+{
+    Vector<WGPUDDVertexAttributeFormat> result;
+    for (auto& d : descriptor) {
+        result.append(WGPUDDVertexAttributeFormat {
+            .semantic = d.semantic,
+            .format = d.format,
+            .layoutIndex = d.layoutIndex,
+            .offset = d.offset
+        });
+    }
+    return result;
+}
+
+static Vector<WGPUDDVertexLayout> convertToBacking(const Vector<DDModel::DDVertexLayout>& descriptor)
+{
+    Vector<WGPUDDVertexLayout> result;
+    for (auto& d : descriptor) {
+        result.append(WGPUDDVertexLayout {
+            .bufferIndex = d.bufferIndex,
+            .bufferOffset = d.bufferOffset,
+            .bufferStride = d.bufferStride,
+        });
+    }
+    return result;
+}
+
+RefPtr<DDModel::DDMesh> GPUImpl::addMeshRequest(const DDModel::DDMeshDescriptor& descriptor)
+{
+    Ref convertToBackingContext = m_modelConvertToBackingContext;
+
+    WGPUDDMeshDescriptor backingDescriptor {
+        .indexCapacity = descriptor.indexCapacity,
+        .indexType = descriptor.indexType,
+        .vertexBufferCount = descriptor.vertexBufferCount,
+        .vertexCapacity = descriptor.vertexCapacity,
+        .vertexAttributes = convertToBacking(descriptor.vertexAttributes),
+        .vertexLayouts = convertToBacking(descriptor.vertexLayouts)
+    };
+
+    return DDModel::DDMeshImpl::create(adoptWebGPU(wgpuDDMeshCreate(m_backing.get(), &backingDescriptor)), convertToBackingContext);
+}
+
 static WTF::Function<void(CompletionHandler<void()>&&)> convert(WGPUOnSubmittedWorkScheduledCallback&& onSubmittedWorkScheduledCallback)
 {
     return [onSubmittedWorkScheduledCallback = makeBlockPtr(WTFMove(onSubmittedWorkScheduledCallback))](CompletionHandler<void()>&& completionHandler) {
@@ -100,17 +147,11 @@ RefPtr<PresentationContext> GPUImpl::createPresentationContext(const Presentatio
         compositorIntegration->registerCallbacks(makeBlockPtr(WTFMove(renderBuffersWereRecreatedCallback)), convert(WTFMove(onSubmittedWorkScheduledCallback)));
     });
 
-    WGPUSurfaceDescriptorCocoaCustomSurface cocoaSurface {
-        {
-            nullptr,
-            static_cast<WGPUSType>(WGPUSTypeExtended_SurfaceDescriptorCocoaSurfaceBacking),
-        },
-        registerCallbacksBlock.get(),
-    };
-
     WGPUSurfaceDescriptor surfaceDescriptor {
-        &cocoaSurface.chain,
-        nullptr,
+        .label = nullptr,
+        .cocoaDescriptor = WGPUSurfaceDescriptorCocoaCustomSurface {
+            .compositorIntegrationRegister = registerCallbacksBlock.get(),
+        }
     };
 
     auto result = PresentationContextImpl::create(adoptWebGPU(wgpuInstanceCreateSurface(m_backing.get(), &surfaceDescriptor)), m_convertToBackingContext);

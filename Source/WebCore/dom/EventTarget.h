@@ -30,11 +30,11 @@
 
 #pragma once
 
+#include <WebCore/AddEventListenerOptions.h>
 #include <WebCore/EventListenerMap.h>
 #include <WebCore/EventListenerOptions.h>
 #include <WebCore/PlatformExportMacros.h>
 #include <WebCore/ScriptWrappable.h>
-#include <bmalloc/TZoneHeap.h>
 #include <memory>
 #include <wtf/CanMakeWeakPtr.h>
 #include <wtf/CheckedPtr.h>
@@ -57,7 +57,6 @@ enum class EventTargetInterfaceType : uint8_t;
 class DOMWrapperWorld;
 class EventTarget;
 class JSEventListener;
-struct AddEventListenerOptions;
 template<typename> class ExceptionOr;
 
 struct EventTargetData {
@@ -96,6 +95,7 @@ public:
 
     virtual enum EventTargetInterfaceType eventTargetInterface() const = 0;
     virtual ScriptExecutionContext* scriptExecutionContext() const = 0;
+    RefPtr<ScriptExecutionContext> protectedScriptExecutionContext() const;
 
     virtual bool isPaymentRequest() const;
 

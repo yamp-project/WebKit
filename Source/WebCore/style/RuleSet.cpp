@@ -111,12 +111,12 @@ static bool isHostSelectorMatchingInShadowTree(const CSSSelector& startSelector)
 
     bool hasOnlyOneCompound = true;
     bool hasHostInLastCompound = false;
-    for (auto* selector = &startSelector; selector; selector = selector->tagHistory()) {
+    for (auto* selector = &startSelector; selector; selector = selector->precedingInComplexSelector()) {
         if (selector->match() == CSSSelector::Match::PseudoClass && selector->pseudoClass() == CSSSelector::PseudoClass::Host)
             hasHostInLastCompound = true;
         if (isHostSelectorMatchingInShadowTreeInSelectorList(selector->selectorList()))
             return true;
-        if (selector->tagHistory() && selector->relation() != CSSSelector::Relation::Subselector) {
+        if (selector->precedingInComplexSelector() && selector->relation() != CSSSelector::Relation::Subselector) {
             hasOnlyOneCompound = false;
             hasHostInLastCompound = false;
         }
@@ -136,7 +136,7 @@ static bool shouldHaveBucketForAttributeName(const CSSSelector& attributeSelecto
 
 void RuleSet::addRule(const StyleRule& rule, unsigned selectorIndex, unsigned selectorListIndex)
 {
-    RuleData ruleData(rule, selectorIndex, selectorListIndex, m_ruleCount, IsStartingStyle::No);
+    RuleData ruleData(rule, selectorIndex, selectorListIndex, m_ruleCount, { });
     addRule(WTFMove(ruleData), 0, 0, 0);
 }
 
@@ -160,6 +160,17 @@ void RuleSet::addRule(RuleData&& ruleData, CascadeLayerIdentifier cascadeLayerId
     storeIdentifier(scopeRuleIdentifier, m_scopeRuleIdentifierForRulePosition);
 
     const auto& scopeRules = scopeRulesFor(ruleData);
+
+    auto computeLinkMatchType = [&] {
+        // General case: no @scope rule or current rule selector is not :scope.
+        if (scopeRules.isEmpty() || !ruleData.selector()->hasScope())
+            return SelectorChecker::determineLinkMatchType(ruleData.selector());
+        // When current rule is :scope, we need to take into account the @scope selectors to determine the link match type.
+        Ref scopeRule = scopeRules.last();
+        return SelectorChecker::determineLinkMatchType(ruleData.selector(), scopeRule.ptr());
+    };
+    ruleData.setLinkMatchType(computeLinkMatchType());
+
     m_features.collectFeatures(ruleData, scopeRules);
 
     unsigned classBucketSize = 0;
@@ -277,7 +288,7 @@ void RuleSet::addRule(RuleData&& ruleData, CascadeLayerIdentifier cascadeLayerId
         // We only process the subject (rightmost compound selector).
         if (selector->relation() != CSSSelector::Relation::Subselector)
             break;
-        selector = selector->tagHistory();
+        selector = selector->precedingInComplexSelector();
     } while (selector);
 
     if (!m_hasHostPseudoClassRulesMatchingInShadowTree)
@@ -308,7 +319,7 @@ void RuleSet::addRule(RuleData&& ruleData, CascadeLayerIdentifier cascadeLayerId
         // FIXME: Custom pseudo elements are handled by the shadow tree's selector filter. It doesn't know about the main DOM.
         ruleData.disableSelectorFiltering();
 
-        auto* nextSelector = customPseudoElementSelector->tagHistory();
+        auto* nextSelector = customPseudoElementSelector->precedingInComplexSelector();
         if (nextSelector && nextSelector->match() == CSSSelector::Match::PseudoElement && nextSelector->pseudoElement() == CSSSelector::PseudoElement::Part) {
             // Handle selectors like ::part(foo)::placeholder with the part codepath.
             m_partPseudoElementRules.append(ruleData);

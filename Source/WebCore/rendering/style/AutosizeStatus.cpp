@@ -42,9 +42,9 @@ bool AutosizeStatus::probablyContainsASmallFixedNumberOfLines(const RenderStyle&
     auto& maxHeight = style.maxHeight();
     std::optional<float> heightOrMaxHeightAsLength;
     if (auto fixedMaxHeight = maxHeight.tryFixed())
-        heightOrMaxHeightAsLength = fixedMaxHeight->value;
+        heightOrMaxHeightAsLength = fixedMaxHeight->resolveZoom(Style::ZoomNeeded { });
     else if (auto fixedHeight = style.height().tryFixed(); fixedHeight && (!maxHeight.isSpecified() || maxHeight.isNone()))
-        heightOrMaxHeightAsLength = fixedHeight->value;
+        heightOrMaxHeightAsLength = fixedHeight->resolveZoom(Style::ZoomNeeded { });
 
     if (!heightOrMaxHeightAsLength)
         return false;
@@ -58,11 +58,8 @@ bool AutosizeStatus::probablyContainsASmallFixedNumberOfLines(const RenderStyle&
         return false;
 
     float approximateNumberOfLines = heightOrMaxHeight / approximateLineHeight;
-    auto& lineClamp = style.lineClamp();
-    if (!lineClamp.isNone() && !lineClamp.isPercentage()) {
-        int lineClampValue = lineClamp.value();
-        return lineClampValue && std::floor(approximateNumberOfLines) == lineClampValue;
-    }
+    if (auto integerLineClamp = style.lineClamp().tryInteger())
+        return std::floor(approximateNumberOfLines) == integerLineClamp->value;
 
     const int maximumNumberOfLines = 5;
     const float thresholdForConsideringAnApproximateNumberOfLinesToBeCloseToAnInteger = 0.01;

@@ -27,38 +27,91 @@
 
 #include "InternalReadableStream.h"
 #include <JavaScriptCore/Strong.h>
-#include <wtf/RefCounted.h>
+#include <wtf/RefCountedAndCanMakeWeakPtr.h>
+#include <wtf/WeakPtr.h>
 
 namespace WebCore {
 
+class DeferredPromise;
 class InternalReadableStream;
 class JSDOMGlobalObject;
+class ReadableByteStreamController;
+class ReadableStreamBYOBReader;
+class ReadableStreamDefaultReader;
 class ReadableStreamSource;
+class WritableStream;
 
-class ReadableStream : public RefCounted<ReadableStream> {
+struct UnderlyingSource;
+
+using ReadableStreamReader = Variant<RefPtr<ReadableStreamDefaultReader>, RefPtr<ReadableStreamBYOBReader>>;
+
+class ReadableStream : public RefCountedAndCanMakeWeakPtr<ReadableStream> {
 public:
-    static ExceptionOr<Ref<ReadableStream>> create(JSC::JSGlobalObject&, std::optional<JSC::Strong<JSC::JSObject>>&&, std::optional<JSC::Strong<JSC::JSObject>>&&);
+    enum class ReaderMode { Byob };
+    struct GetReaderOptions {
+        std::optional<ReaderMode> mode;
+    };
+    struct WritablePair {
+        RefPtr<ReadableStream> readable;
+        RefPtr<WritableStream> writable;
+    };
+
+    static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, std::optional<JSC::Strong<JSC::JSObject>>&&, std::optional<JSC::Strong<JSC::JSObject>>&&);
     static ExceptionOr<Ref<ReadableStream>> create(JSDOMGlobalObject&, Ref<ReadableStreamSource>&&);
+    static ExceptionOr<Ref<ReadableStream>> createFromByteUnderlyingSource(JSDOMGlobalObject&, JSC::JSValue underlyingSource, UnderlyingSource&&, double highWaterMark);
     static Ref<ReadableStream> create(Ref<InternalReadableStream>&&);
 
-    virtual ~ReadableStream() = default;
+    virtual ~ReadableStream();
 
-    void lock() { m_internalReadableStream->lock(); }
-    bool isLocked() const { return m_internalReadableStream->isLocked(); }
-    bool isDisturbed() const { return m_internalReadableStream->isDisturbed(); }
-    void cancel(Exception&& exception) { m_internalReadableStream->cancel(WTFMove(exception)); }
-    void pipeTo(ReadableStreamSink& sink) { m_internalReadableStream->pipeTo(sink); }
+    void cancel(JSDOMGlobalObject&, JSC::JSValue, Ref<DeferredPromise>&&);
+    ExceptionOr<ReadableStreamReader> getReader(JSDOMGlobalObject&, const GetReaderOptions&);
     ExceptionOr<Vector<Ref<ReadableStream>>> tee(bool shouldClone = false);
 
-    InternalReadableStream& internalReadableStream() { return m_internalReadableStream.get(); }
+    using State = InternalReadableStream::State;
+    State state() const;
+
+    void lock();
+    bool isLocked() const;
+    WEBCORE_EXPORT bool isDisturbed() const;
+
+    void cancel(Exception&&);
+
+    InternalReadableStream* internalReadableStream() { return m_internalReadableStream.get(); }
+
+    void setDefaultReader(ReadableStreamDefaultReader*);
+    ReadableStreamDefaultReader* defaultReader();
+
+    void setByobReader(ReadableStreamBYOBReader*);
+    bool hasByteStreamController() { return !!m_controller; }
+    ReadableStreamBYOBReader* byobReader();
+
+    ReadableByteStreamController* controller() { return m_controller.get(); }
+
+    void markAsDisturbed() { m_disturbed = true; }
+
+    void close();
+    void pipeTo(ReadableStreamSink& sink) { m_internalReadableStream->pipeTo(sink); }
+
+    JSC::JSValue storedError(JSDOMGlobalObject&) const;
+
+    size_t getNumReadRequests() const;
+    void addReadRequest(Ref<DeferredPromise>&&);
 
 protected:
     static ExceptionOr<Ref<ReadableStream>> createFromJSValues(JSC::JSGlobalObject&, JSC::JSValue, JSC::JSValue);
     static ExceptionOr<Ref<InternalReadableStream>> createInternalReadableStream(JSDOMGlobalObject&, Ref<ReadableStreamSource>&&);
-    explicit ReadableStream(Ref<InternalReadableStream>&&);
+    explicit ReadableStream(RefPtr<InternalReadableStream>&& = { });
 
 private:
-    const Ref<InternalReadableStream> m_internalReadableStream;
+    ExceptionOr<void> setupReadableByteStreamControllerFromUnderlyingSource(JSDOMGlobalObject&, JSC::JSValue, UnderlyingSource&&, double);
+
+    bool m_disturbed { false };
+    WeakPtr<ReadableStreamDefaultReader> m_defaultReader;
+    WeakPtr<ReadableStreamBYOBReader> m_byobReader;
+    State m_state { State::Readable };
+
+    const std::unique_ptr<ReadableByteStreamController> m_controller;
+    const RefPtr<InternalReadableStream> m_internalReadableStream;
 };
 
 } // namespace WebCore

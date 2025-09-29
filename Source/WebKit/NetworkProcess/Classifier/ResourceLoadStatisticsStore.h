@@ -107,7 +107,7 @@ public:
         return adoptRef(*new ResourceLoadStatisticsStore(webResourceLoadStatisticsStore, suspendableWorkQueue, shouldIncludeLocalhost, storageDirectoryPath, sessionID));
     }
 
-    virtual ~ResourceLoadStatisticsStore();
+    ~ResourceLoadStatisticsStore();
 
     void clear(CompletionHandler<void()>&&);
     bool isEmpty() const;
@@ -123,6 +123,8 @@ public:
 
     void requestStorageAccessUnderOpener(DomainInNeedOfStorageAccess&&, WebCore::PageIdentifier openerID, OpenerDomain&&, CanRequestStorageAccessWithoutUserInteraction);
     void removeAllStorageAccess(CompletionHandler<void()>&&);
+
+    HashSet<RegistrableDomain> loadWebsitesWithUserInteraction();
 
     void grandfatherExistingWebsiteData(CompletionHandler<void()>&&);
     void setGrandfathered(const RegistrableDomain&, bool value);

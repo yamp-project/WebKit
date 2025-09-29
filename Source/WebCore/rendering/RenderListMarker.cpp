@@ -88,10 +88,10 @@ void RenderListMarker::styleDidChange(StyleDifference diff, const RenderStyle* o
         diff = adjustedStyleDifference(diff, *oldStyle, style());
     RenderBox::styleDidChange(diff, oldStyle);
 
-    if (m_image != style().listStyleImage()) {
+    if (RefPtr newImage = style().listStyleImage().tryStyleImage(); m_image != newImage) {
         if (m_image)
             m_image->removeClient(*this);
-        m_image = style().listStyleImage();
+        m_image = WTFMove(newImage);
         if (m_image)
             m_image->addClient(*this);
     }
@@ -177,7 +177,7 @@ void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
     GraphicsContext& context = paintInfo.context();
 
     if (isImage()) {
-        if (RefPtr markerImage = m_image->image(this, markerRect.size()))
+        if (RefPtr markerImage = m_image->image(this, markerRect.size(), context))
             context.drawImage(*markerImage, markerRect);
         if (selectionState() != HighlightState::None) {
             LayoutRect selectionRect = localSelectionRect();
@@ -268,9 +268,9 @@ void RenderListMarker::layout()
     setMarginEnd(0);
 
     if (auto fixedStartMargin = style().marginStart().tryFixed())
-        setMarginStart(LayoutUnit(fixedStartMargin->value));
+        setMarginStart(LayoutUnit(fixedStartMargin->resolveZoom(Style::ZoomNeeded { })));
     if (auto fixedEndMargin = style().marginEnd().tryFixed())
-        setMarginEnd(LayoutUnit(fixedEndMargin->value));
+        setMarginEnd(LayoutUnit(fixedEndMargin->resolveZoom(Style::ZoomNeeded { })));
 
     clearNeedsLayout();
 }

@@ -39,7 +39,9 @@
 #include "JSWebAssemblyModule.h"
 #include "JSWebAssemblyStruct.h"
 #include "Register.h"
+#include "WasmBaselineData.h"
 #include "WasmConstExprGenerator.h"
+#include "WasmDebugServer.h"
 #include "WasmModuleInformation.h"
 #include "WasmTag.h"
 #include "WasmTypeDefinitionInlines.h"
@@ -69,23 +71,23 @@ JSWebAssemblyInstance::JSWebAssemblyInstance(VM& vm, Structure* structure, JSWeb
     , m_moduleRecord(moduleRecord, WriteBarrierEarlyInit)
     , m_tables(module->module().moduleInformation().tableCount())
     , m_module(module->module())
+    , m_moduleInformation(module->moduleInformation())
     , m_sourceProvider(sourceProvider)
-    , m_globalsToMark(m_module.get().moduleInformation().globalCount())
-    , m_globalsToBinding(m_module.get().moduleInformation().globalCount())
-    , m_numImportFunctions(m_module->moduleInformation().importFunctionCount())
-    , m_passiveElements(m_module->moduleInformation().elementCount())
-    , m_passiveDataSegments(m_module->moduleInformation().dataSegmentsCount())
-    , m_tags(m_module->moduleInformation().exceptionIndexSpaceSize())
+    , m_globalsToMark(m_moduleInformation->globalCount())
+    , m_globalsToBinding(m_moduleInformation->globalCount())
+    , m_numImportFunctions(m_moduleInformation->importFunctionCount())
+    , m_passiveElements(m_moduleInformation->elementCount())
+    , m_passiveDataSegments(m_moduleInformation->dataSegmentsCount())
+    , m_tags(m_moduleInformation->exceptionIndexSpaceSize())
 {
     static_assert(static_cast<ptrdiff_t>(JSWebAssemblyInstance::offsetOfCachedMemory() + sizeof(void*)) == JSWebAssemblyInstance::offsetOfCachedBoundsCheckingSize());
     for (unsigned i = 0; i < m_numImportFunctions; ++i)
         new (importFunctionInfo(i)) WasmOrJSImportableFunctionCallLinkInfo();
 
-    auto& moduleInformation = m_module->moduleInformation();
-    m_globals = std::bit_cast<Global::Value*>(std::bit_cast<char*>(this) + offsetOfGlobalPtr(m_numImportFunctions, moduleInformation.tableCount(), 0));
-    memset(std::bit_cast<char*>(m_globals), 0, moduleInformation.globalCount() * sizeof(Global::Value));
-    for (unsigned i = 0; i < moduleInformation.globals.size(); ++i) {
-        const GlobalInformation& global = moduleInformation.globals[i];
+    m_globals = globals().data();
+    memset(reinterpret_cast<uint8_t*>(globals().data()), 0, globals().size_bytes());
+    for (unsigned i = 0; i < m_moduleInformation->globals.size(); ++i) {
+        const GlobalInformation& global = m_moduleInformation->globals[i];
         if (global.bindingMode == GlobalInformation::BindingMode::Portable) {
             // This is kept alive by JSWebAssemblyInstance -> JSWebAssemblyGlobal -> binding.
             m_globalsToBinding.set(i);
@@ -94,27 +96,28 @@ JSWebAssemblyInstance::JSWebAssemblyInstance(VM& vm, Structure* structure, JSWeb
             m_globalsToMark.set(i);
         }
     }
-    memset(std::bit_cast<char*>(this) + offsetOfTablePtr(m_numImportFunctions, 0), 0, moduleInformation.tableCount() * sizeof(Table*));
-    for (unsigned elementIndex = 0; elementIndex < moduleInformation.elementCount(); ++elementIndex) {
-        const auto& element = moduleInformation.elements[elementIndex];
+
+    memset(reinterpret_cast<uint8_t*>(tables().data()), 0, tables().size_bytes());
+    for (unsigned elementIndex = 0; elementIndex < m_moduleInformation->elementCount(); ++elementIndex) {
+        const auto& element = m_moduleInformation->elements[elementIndex];
         if (element.isPassive())
             m_passiveElements.quickSet(elementIndex);
     }
 
-    for (unsigned dataSegmentIndex = 0; dataSegmentIndex < moduleInformation.dataSegmentsCount(); ++dataSegmentIndex) {
-        const auto& dataSegment = moduleInformation.data[dataSegmentIndex];
+    for (unsigned dataSegmentIndex = 0; dataSegmentIndex < m_moduleInformation->dataSegmentsCount(); ++dataSegmentIndex) {
+        const auto& dataSegment = m_moduleInformation->data[dataSegmentIndex];
         if (dataSegment->isPassive())
             m_passiveDataSegments.quickSet(dataSegmentIndex);
     }
 
-    if (moduleInformation.hasGCObjectTypes()) {
-        memset(reinterpret_cast<char*>(&gcObjectStructureID(0)), 0, moduleInformation.typeCount() * sizeof(std::decay_t<decltype(gcObjectStructureID(0))>));
-
+    memset(reinterpret_cast<uint8_t*>(baselineDatas().data()), 0, baselineDatas().size_bytes());
+    if (m_moduleInformation->hasGCObjectTypes()) {
+        memset(reinterpret_cast<uint8_t*>(gcObjectStructureIDs().data()), 0, gcObjectStructureIDs().size_bytes());
         CompleteSubspace* subspace = JSWebAssemblyArray::subspaceFor<JSWebAssemblyArray, SubspaceAccess::OnMainThread>(vm);
         CompleteSubspace* structSubspace = JSWebAssemblyStruct::subspaceFor<JSWebAssemblyStruct, SubspaceAccess::OnMainThread>(vm);
         RELEASE_ASSERT(subspace == structSubspace);
         subspace->prepareAllAllocators();
-        memcpySpan(unsafeMakeSpan(&allocatorForGCObject(0), MarkedSpace::numSizeClasses), subspace->allocatorsForSizeSteps());
+        memcpySpan(allocators(), subspace->allocatorsForSizeSteps());
     }
 }
 
@@ -127,30 +130,41 @@ void JSWebAssemblyInstance::finishCreation(VM& vm)
     // FIXME: Maybe we should cache these structures. It's unclear how profitable this would be though since there's typically only one instance per module per VM.
     // Since we don't have a global GC it's somewhat unlikely we'd end up de-duplicating much. It's also a bit unclear how much of a perf win it would be at least
     // until folks start doing dynamic code loading.
-    auto& moduleInformation = m_module->moduleInformation();
     JSGlobalObject* globalObject = this->globalObject();
-    for (unsigned i = 0; i < moduleInformation.typeCount(); ++i) {
-        Ref rtt = moduleInformation.rtts[i];
+    for (unsigned i = 0; i < m_moduleInformation->typeCount(); ++i) {
+        Ref rtt = m_moduleInformation->rtts[i];
         if (rtt->kind() == RTTKind::Array)
-            gcObjectStructureID(i).setWithoutWriteBarrier(JSWebAssemblyArray::createStructure(vm, globalObject, moduleInformation.typeSignatures[i]->expand(), WTFMove(rtt)));
+            gcObjectStructureID(i).set(vm, this, JSWebAssemblyArray::createStructure(vm, globalObject, m_moduleInformation->typeSignatures[i]->expand(), WTFMove(rtt)));
         else if (rtt->kind() == RTTKind::Struct)
-            gcObjectStructureID(i).setWithoutWriteBarrier(JSWebAssemblyStruct::createStructure(vm, globalObject, moduleInformation.typeSignatures[i]->expand(), WTFMove(rtt)));
+            gcObjectStructureID(i).set(vm, this, JSWebAssemblyStruct::createStructure(vm, globalObject, m_moduleInformation->typeSignatures[i]->expand(), WTFMove(rtt)));
     }
-    if (moduleInformation.typeCount())
-        vm.writeBarrier(this);
 
     m_vm->traps().registerMirror(m_stackMirror);
+
+    // Now, JSWebAssemblyInstance is fully initialized. Expose it to the concurrent compiler.
+    m_anchor = m_module->registerAnchor(this);
+
+    if (Options::enableWasmDebugger()) [[unlikely]]
+        Wasm::DebugServer::singleton().trackInstance(this);
 }
 
 JSWebAssemblyInstance::~JSWebAssemblyInstance()
 {
     m_vm->traps().unregisterMirror(m_stackMirror);
     clearJSCallICs(*m_vm);
-    for (unsigned i = 0; i < m_numImportFunctions; ++i)
-        importFunctionInfo(i)->~WasmOrJSImportableFunctionCallLinkInfo();
-    for (unsigned i = 0; i < m_module->moduleInformation().tableCount(); ++i) {
-        if (Table* table = this->table(i))
-            table->deref();
+
+    for (auto& slot : importFunctionInfos())
+        std::destroy_at(&slot);
+
+    for (auto& slot : tables())
+        std::destroy_at(&slot);
+
+    for (auto& slot : baselineDatas())
+        std::destroy_at(&slot);
+
+    if (m_anchor) {
+        m_anchor->tearDown();
+        m_anchor = nullptr;
     }
 }
 
@@ -185,7 +199,7 @@ void JSWebAssemblyInstance::visitChildrenImpl(JSCell* cell, Visitor& visitor)
     const auto& moduleInformation = thisObject->moduleInformation();
     if (moduleInformation.hasGCObjectTypes()) {
         for (unsigned i = 0; i < moduleInformation.typeCount(); ++i)
-            visitor.append(thisObject->gcObjectStructureID(thisObject->numImportFunctions(), moduleInformation.tableCount(), moduleInformation.globalCount(), i));
+            visitor.append(thisObject->gcObjectStructureID(i));
     }
 
     Locker locker { cell->cellLock() };
@@ -231,14 +245,9 @@ void JSWebAssemblyInstance::finalizeCreation(VM& vm, JSGlobalObject* globalObjec
     for (unsigned importFunctionNum = 0; importFunctionNum < numImportFunctions(); ++importFunctionNum) {
         auto functionSpaceIndex = FunctionSpaceIndex(importFunctionNum);
         auto* info = importFunctionInfo(importFunctionNum);
-        if (!info->targetInstance) {
+        if (!info->boxedCallee || info->isJS()) {
             // the import is a JS function
             info->importFunctionStub = module().importFunctionStub(functionSpaceIndex);
-            importCallees.append(adoptRef(*new WasmToJSCallee(functionSpaceIndex, { nullptr, nullptr })));
-            ASSERT(*info->boxedWasmCalleeLoadLocation == CalleeBits::nullCallee());
-            info->boxedCallee = CalleeBits::encodeNativeCallee(importCallees.last().ptr());
-            info->boxedWasmCalleeLoadLocation = &info->boxedCallee;
-
             auto callLinkInfo = makeUnique<DataOnlyCallLinkInfo>();
             callLinkInfo->initialize(vm, nullptr, CallLinkInfo::CallType::Call, CodeOrigin { });
             WTF::storeStoreFence(); // CallLinkInfo is visited by concurrent GC already, thus, when we add it, we must ensure that it is fully initialized.
@@ -246,14 +255,12 @@ void JSWebAssemblyInstance::finalizeCreation(VM& vm, JSGlobalObject* globalObjec
             vm.writeBarrier(this); // Materialized CallLinkInfo and we need rescan of JSWebAssemblyInstance.
         } else {
             // the import is a Wasm function or a builtin
-            auto calleeBits = *info->boxedWasmCalleeLoadLocation;
+            auto calleeBits = info->boxedCallee;
             if (calleeBits.isNativeCallee()) {
                 auto* callee = std::bit_cast<Callee*>(calleeBits.asNativeCallee());
                 // if the callee is a builtin, info->importFunctionStub has already been set
-                if (callee->compilationMode() != CompilationMode::WasmBuiltinMode) {
+                if (callee->compilationMode() != CompilationMode::WasmBuiltinMode)
                     info->importFunctionStub = wasmCalleeGroup->wasmToWasmExitStub(functionSpaceIndex);
-                    ASSERT(info->boxedWasmCalleeLoadLocation && *info->boxedWasmCalleeLoadLocation);
-                }
             }
         }
     }
@@ -275,15 +282,9 @@ Identifier JSWebAssemblyInstance::createPrivateModuleKey()
 
 size_t JSWebAssemblyInstance::allocationSize(const Wasm::ModuleInformation& info)
 {
-    Checked<size_t> size = offsetOfTail();
-    size += sizeof(WasmOrJSImportableFunctionCallLinkInfo) * info.importFunctionCount();
-    size += sizeof(Wasm::Table*) * info.tableCount();
-    size = roundUpToMultipleOf<alignof(Wasm::Global::Value)>(size) + sizeof(Wasm::Global::Value) * info.globalCount();
-    if (info.hasGCObjectTypes()) {
-        size = roundUpToMultipleOf<alignof(WriteBarrierStructureID)>(size) + sizeof(WriteBarrierStructureID) * info.typeCount();
-        size = roundUpToMultipleOf<alignof(Allocator)>(size) + sizeof(Allocator) * MarkedSpace::numSizeClasses;
-    }
-    return size;
+    if (info.hasGCObjectTypes())
+        return offsetOfAllocatorForGCObject(info, MarkedSpace::numSizeClasses);
+    return offsetOfBaselineData(info, info.internalFunctionCount());
 }
 
 
@@ -419,17 +420,14 @@ void JSWebAssemblyInstance::setFunctionWrapper(unsigned i, JSValue value)
 
 Table* JSWebAssemblyInstance::table(unsigned i)
 {
-    RELEASE_ASSERT(i < m_module->moduleInformation().tableCount());
-    return *std::bit_cast<Table**>(std::bit_cast<char*>(this) + offsetOfTablePtr(m_numImportFunctions, i));
+    return tables()[i].get();
 }
 
 void JSWebAssemblyInstance::tableCopy(uint32_t dstOffset, uint32_t srcOffset, uint32_t length, uint32_t dstTableIndex, uint32_t srcTableIndex)
 {
-    RELEASE_ASSERT(srcTableIndex < m_module->moduleInformation().tableCount());
-    RELEASE_ASSERT(dstTableIndex < m_module->moduleInformation().tableCount());
-
-    Table* dstTable = table(dstTableIndex);
-    Table* srcTable = table(srcTableIndex);
+    auto span = tables();
+    Table* dstTable = span[dstTableIndex].get();
+    Table* srcTable = span[srcTableIndex].get();
     RELEASE_ASSERT(dstTable->type() == srcTable->type());
 
     auto forEachTableElement = [&](auto fn) {
@@ -468,8 +466,8 @@ bool JSWebAssemblyInstance::memoryInit(uint32_t dstAddress, uint32_t srcAddress,
     if (sumOverflows<uint32_t>(srcAddress, length))
         return false;
 
-    const Segment::Ptr& segment = module().moduleInformation().data[dataSegmentIndex];
-    const uint32_t segmentSizeInBytes = m_passiveDataSegments.quickGet(dataSegmentIndex) ? segment->sizeInBytes : 0U;
+    auto& segment = module().moduleInformation().data[dataSegmentIndex];
+    const uint32_t segmentSizeInBytes = m_passiveDataSegments.quickGet(dataSegmentIndex) ? segment->sizeInBytes() : 0U;
     if (srcAddress + length > segmentSizeInBytes)
         return false;
 
@@ -486,10 +484,10 @@ void JSWebAssemblyInstance::dataDrop(uint32_t dataSegmentIndex)
 
 const Element* JSWebAssemblyInstance::elementAt(unsigned index) const
 {
-    RELEASE_ASSERT(index < m_module->moduleInformation().elementCount());
+    RELEASE_ASSERT(index < m_moduleInformation->elementCount());
 
     if (m_passiveElements.quickGet(index))
-        return &m_module->moduleInformation().elements[index];
+        return &m_moduleInformation->elements[index];
     return nullptr;
 }
 
@@ -542,7 +540,7 @@ void JSWebAssemblyInstance::initElementSegment(uint32_t tableIndex, const Elemen
                 continue;
             }
 
-            auto& jsEntrypointCallee = calleeGroup()->jsEntrypointCalleeFromFunctionIndexSpace(functionIndex);
+            auto& jsToWasmCallee = calleeGroup()->jsToWasmCalleeFromFunctionIndexSpace(functionIndex);
             auto wasmCallee = calleeGroup()->wasmCalleeFromFunctionIndexSpace(functionIndex);
             ASSERT(wasmCallee);
             WasmToWasmImportableFunction::LoadLocation entrypointLoadLocation = calleeGroup()->entrypointLoadLocationFromFunctionIndexSpace(functionIndex);
@@ -558,7 +556,7 @@ void JSWebAssemblyInstance::initElementSegment(uint32_t tableIndex, const Elemen
                 signature.argumentCount(),
                 WTF::makeString(functionIndex.rawIndex()),
                 this,
-                jsEntrypointCallee,
+                jsToWasmCallee,
                 *wasmCallee,
                 entrypointLoadLocation,
                 typeIndex,
@@ -599,8 +597,8 @@ bool JSWebAssemblyInstance::copyDataSegment(JSWebAssemblyArray* array, uint32_t 
     // Fail if the data segment index is out of bounds
     RELEASE_ASSERT(segmentIndex < module().moduleInformation().dataSegmentsCount());
     // Otherwise, get the `segmentIndex`th data segment
-    const Segment::Ptr& segment = module().moduleInformation().data[segmentIndex];
-    const uint32_t segmentSizeInBytes = m_passiveDataSegments.quickGet(segmentIndex) ? segment->sizeInBytes : 0U;
+    auto& segment = module().moduleInformation().data[segmentIndex];
+    const uint32_t segmentSizeInBytes = m_passiveDataSegments.quickGet(segmentIndex) ? segment->sizeInBytes() : 0U;
 
     // Caller checks that the (offset + lengthInBytes) calculation doesn't overflow
     if ((offset + lengthInBytes) > segmentSizeInBytes) {
@@ -676,8 +674,8 @@ void JSWebAssemblyInstance::copyElementSegment(JSWebAssemblyArray* array, const 
 
 bool JSWebAssemblyInstance::evaluateConstantExpression(uint64_t index, Type expectedType, uint64_t& result)
 {
-    const auto& constantExpression = m_module->moduleInformation().constantExpressions[index];
-    auto evalResult = evaluateExtendedConstExpr(constantExpression, this, m_module->moduleInformation(), expectedType);
+    const auto& constantExpression = m_moduleInformation->constantExpressions[index];
+    auto evalResult = evaluateExtendedConstExpr(constantExpression, this, m_moduleInformation.get(), expectedType);
     if (!evalResult.has_value()) [[unlikely]]
         return false;
 
@@ -687,8 +685,8 @@ bool JSWebAssemblyInstance::evaluateConstantExpression(uint64_t index, Type expe
 
 void JSWebAssemblyInstance::tableInit(uint32_t dstOffset, uint32_t srcOffset, uint32_t length, uint32_t elementIndex, uint32_t tableIndex)
 {
-    RELEASE_ASSERT(elementIndex < m_module->moduleInformation().elementCount());
-    RELEASE_ASSERT(tableIndex < m_module->moduleInformation().tableCount());
+    RELEASE_ASSERT(elementIndex < m_moduleInformation->elementCount());
+    RELEASE_ASSERT(tableIndex < m_moduleInformation->tableCount());
 
     const Element* elementSegment = elementAt(elementIndex);
     RELEASE_ASSERT(elementSegment);
@@ -698,9 +696,28 @@ void JSWebAssemblyInstance::tableInit(uint32_t dstOffset, uint32_t srcOffset, ui
 
 void JSWebAssemblyInstance::setTable(unsigned i, Ref<Table>&& table)
 {
-    RELEASE_ASSERT(i < m_module->moduleInformation().tableCount());
     ASSERT(!this->table(i));
-    *std::bit_cast<Table**>(std::bit_cast<char*>(this) + offsetOfTablePtr(m_numImportFunctions, i)) = &table.leakRef();
+    // table0 has special handling for optimization.
+    bool update = false;
+    if (!i) {
+        if (auto* funcTable = table->asFuncrefTable()) {
+            funcTable->registerInstance(*this);
+            update = true;
+        }
+    }
+    tables()[i] = WTFMove(table);
+    if (update)
+        updateCachedTable0();
+}
+
+void JSWebAssemblyInstance::updateCachedTable0()
+{
+    RefPtr table0 = this->table(0);
+    ASSERT(table0);
+    RefPtr funcTable = table0->asFuncrefTable();
+    ASSERT(funcTable);
+    m_cachedTable0Buffer = funcTable->functions();
+    m_cachedTable0Length = funcTable->length();
 }
 
 void JSWebAssemblyInstance::linkGlobal(unsigned i, Ref<Global>&& global)
@@ -712,6 +729,17 @@ void JSWebAssemblyInstance::linkGlobal(unsigned i, Ref<Global>&& global)
 void JSWebAssemblyInstance::setTag(unsigned index, Ref<const Tag>&& tag)
 {
     m_tags[index] = WTFMove(tag);
+}
+
+Wasm::BaselineData& JSWebAssemblyInstance::ensureBaselineData(Wasm::FunctionCodeIndex index)
+{
+    auto& slot = baselineData(index);
+    if (!slot) [[unlikely]] {
+        auto result = Wasm::BaselineData::create(m_module->ipintCallees().at(index.rawIndex()));
+        WTF::storeStoreFence(); // Fully initialize BaselineData before exposing it to the concurrent compiler.
+        slot = WTFMove(result);
+    }
+    return *slot;
 }
 
 } // namespace JSC

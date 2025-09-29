@@ -51,7 +51,6 @@ add_definitions(-DLIBDIR="${LIB_INSTALL_DIR}")
 add_definitions(-DPKGLIBDIR="${LIB_INSTALL_DIR}/wpe-webkit-${WPE_API_VERSION}")
 add_definitions(-DPKGLIBEXECDIR="${LIBEXEC_INSTALL_DIR}")
 add_definitions(-DDATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
-add_definitions(-DPKGDATADIR="${CMAKE_INSTALL_FULL_DATADIR}/wpe-webkit-${WPE_API_VERSION}")
 add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}")
 
 if (NOT DEVELOPER_MODE AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
@@ -356,7 +355,14 @@ add_custom_command(
     VERBATIM
 )
 
-set(WebKitResources
+set(WebKitResources "")
+list(APPEND WebKitResources "        <file alias='css/wpe-theme.css'>wpe-theme.css</file>\n"
+  "        <file alias='images/missingImage@2x'>missingImage@2x.png</file>\n"
+  "        <file alias='images/missingImage@3x'>missingImage@3x.png</file>\n"
+  "        <file alias='images/missingImage'>missingImage.png</file>\n"
+  "        <file alias='images/panIcon'>panIcon.png</file>\n"
+  "        <file alias='images/textAreaResizeCorner@2x'>textAreaResizeCorner@2x.png</file>\n"
+  "        <file alias='images/textAreaResizeCorner'>textAreaResizeCorner.png</file>\n"
 )
 
 if (ENABLE_WEB_AUDIO)
@@ -379,6 +385,7 @@ GLIB_COMPILE_RESOURCES(
     SOURCE_XML    ${WebKit_DERIVED_SOURCES_DIR}/WebKitResourcesGResourceBundle.xml
     RESOURCE_DIRS ${CMAKE_SOURCE_DIR}/Source/WebCore/Resources
                   ${CMAKE_SOURCE_DIR}/Source/WebCore/platform/audio/resources
+                  ${CMAKE_SOURCE_DIR}/Source/WebKit/Resources/wpe
 )
 
 list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
@@ -387,6 +394,7 @@ list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
     "${FORWARDING_HEADERS_WPE_EXTENSION_DIR}"
     "${WEBKIT_DIR}/NetworkProcess/glib"
     "${WEBKIT_DIR}/NetworkProcess/soup"
+    "${WEBKIT_DIR}/Platform/IPC/android"
     "${WEBKIT_DIR}/Platform/IPC/glib"
     "${WEBKIT_DIR}/Platform/IPC/unix"
     "${WEBKIT_DIR}/Platform/classifier"
@@ -432,15 +440,12 @@ list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
 )
 
 list(APPEND WebKit_SYSTEM_INCLUDE_DIRECTORIES
-    ${GIO_UNIX_INCLUDE_DIRS}
-    ${GLIB_INCLUDE_DIRS}
     ${LIBSOUP_INCLUDE_DIRS}
 )
 
 list(APPEND WebKit_LIBRARIES
+    GLib::Module
     WPE::libwpe
-    ${GLIB_LIBRARIES}
-    ${GLIB_GMODULE_LIBRARIES}
     ${LIBSOUP_LIBRARIES}
 )
 
@@ -504,8 +509,26 @@ if (ENABLE_WPE_PLATFORM)
     )
 
     list(APPEND WebKit_PRIVATE_LIBRARIES
-        WPEPlatform-${WPE_API_VERSION}
+        WPEPlatform
     )
+
+    if (ENABLE_WPE_PLATFORM_DRM)
+        list(APPEND WebKit_PRIVATE_LIBRARIES
+            WPEPlatformDRM
+        )
+    endif ()
+
+    if (ENABLE_WPE_PLATFORM_HEADLESS)
+        list(APPEND WebKit_PRIVATE_LIBRARIES
+            WPEPlatformHeadless
+        )
+    endif ()
+
+    if (ENABLE_WPE_PLATFORM_WAYLAND)
+        list(APPEND WebKit_PRIVATE_LIBRARIES
+            WPEPlatformWayland
+        )
+    endif ()
 
     list(APPEND WebKit_MESSAGES_IN_FILES
         UIProcess/glib/AcceleratedBackingStore
@@ -588,15 +611,11 @@ if (ENABLE_WPE_QT_API)
             PRIVATE
                 Epoxy::Epoxy
                 WebKit
-                ${GLIB_GOBJECT_LIBRARIES}
-                ${GLIB_LIBRARIES}
-                WPEPlatform-${WPE_API_VERSION}
         )
         target_include_directories(qtwpe PRIVATE
             $<TARGET_PROPERTY:WebKit,INCLUDE_DIRECTORIES>
             ${JavaScriptCoreGLib_FRAMEWORK_HEADERS_DIR}
             ${CMAKE_BINARY_DIR}
-            ${GLIB_INCLUDE_DIRS}
             ${LIBSOUP_INCLUDE_DIRS}
             ${WPE_INCLUDE_DIRS}
             ${WEBKIT_DIR}/UIProcess/API/wpe/qt6
@@ -630,18 +649,16 @@ if (ENABLE_WPE_QT_API)
 
         set(qtwpe_LIBRARIES
             Epoxy::Epoxy
+            GLib::Object
             Qt5::Core Qt5::Quick
             WPE::FDO
             WebKit
-            ${GLIB_GOBJECT_LIBRARIES}
-            ${GLIB_LIBRARIES}
         )
 
         set(qtwpe_INCLUDE_DIRECTORIES
             $<TARGET_PROPERTY:WebKit,INCLUDE_DIRECTORIES>
             ${JavaScriptCoreGLib_FRAMEWORK_HEADERS_DIR}
             ${CMAKE_BINARY_DIR}
-            ${GLIB_INCLUDE_DIRS}
             ${Qt5_INCLUDE_DIRS}
             ${Qt5Gui_PRIVATE_INCLUDE_DIRS}
             ${LIBSOUP_INCLUDE_DIRS}

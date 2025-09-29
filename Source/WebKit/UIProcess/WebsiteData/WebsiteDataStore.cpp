@@ -59,7 +59,6 @@
 #include "WebsiteDataFetchOption.h"
 #include "WebsiteDataStoreClient.h"
 #include "WebsiteDataStoreParameters.h"
-#include <WebCore/ApplicationCacheStorage.h>
 #include <WebCore/CredentialStorage.h>
 #include <WebCore/DatabaseTracker.h>
 #include <WebCore/HTMLMediaElement.h>
@@ -546,28 +545,36 @@ void WebsiteDataStore::handleResolvedDirectoriesAsynchronously(const WebsiteData
     }
 
     // Clear data of deprecated types.
-    m_queue->dispatch([webSQLDirectory = crossThreadCopy(directories.webSQLDatabaseDirectory), applicationCacheDirectory = crossThreadCopy(directories.applicationCacheDirectory), applicationCacheFlatFileSubdirectoryName = crossThreadCopy(directories.applicationCacheFlatFileSubdirectoryName), directoriesToExclude = WTFMove(allCacheDirectories)]() {
+    m_queue->dispatch([webSQLDirectory = crossThreadCopy(directories.webSQLDatabaseDirectory), directoriesToExclude = WTFMove(allCacheDirectories)]() {
         if (!webSQLDirectory.isEmpty()) {
             WebCore::DatabaseTracker::trackerWithDatabasePath(webSQLDirectory)->deleteAllDatabasesImmediately();
             FileSystem::deleteEmptyDirectory(webSQLDirectory);
         }
 
-        if (!applicationCacheDirectory.isEmpty()) {
-            {
-                auto storage = WebCore::ApplicationCacheStorage::create(applicationCacheDirectory, applicationCacheFlatFileSubdirectoryName);
-                storage->deleteAllCaches();
-            }
-            if (!applicationCacheFlatFileSubdirectoryName.isEmpty()) {
-                auto applicationCacheFlatFileSubdirectory = FileSystem::pathByAppendingComponent(applicationCacheDirectory, applicationCacheFlatFileSubdirectoryName);
-                FileSystem::deleteEmptyDirectory(applicationCacheFlatFileSubdirectory);
-            }
-            auto applicationCacheDatabasePath = FileSystem::pathByAppendingComponent(applicationCacheDirectory, "ApplicationCache.db"_s);
-            WebCore::SQLiteFileSystem::deleteDatabaseFile(applicationCacheDatabasePath);
-            FileSystem::deleteEmptyDirectory(applicationCacheDirectory);
-        }
-
         for (auto& directory : directoriesToExclude)
             FileSystem::setExcludedFromBackup(directory, true);
+    });
+}
+
+void WebsiteDataStore::fetchDomainsWithUserInteraction(CompletionHandler<void(const HashSet<WebCore::RegistrableDomain>&)>&& completionHandler)
+{
+    if (m_domainsWithUserInteractions)
+        return completionHandler(*m_domainsWithUserInteractions);
+
+    bool shouldFetch = m_domainsWithUserInteractionsCompletionHandler.isEmpty();
+    m_domainsWithUserInteractionsCompletionHandler.append(WTFMove(completionHandler));
+
+    if (!shouldFetch)
+        return;
+
+    protectedNetworkProcess()->sendWithAsyncReply(Messages::NetworkProcess::FetchWebsitesWithUserInteractions(sessionID()), [this, protectedThis = RefPtr { *this }](HashSet<WebCore::RegistrableDomain>&& domains) {
+        m_domainsWithUserInteractions = WTFMove(domains);
+
+        for (auto& domain : std::exchange(m_pendingDomainsWithUserInteractions, { }))
+            m_domainsWithUserInteractions->add(domain);
+
+        for (auto& completionHandler : std::exchange(m_domainsWithUserInteractionsCompletionHandler, { }))
+            completionHandler(*m_domainsWithUserInteractions);
     });
 }
 
@@ -1511,6 +1518,23 @@ void WebsiteDataStore::setTimeToLiveUserInteraction(Seconds seconds, CompletionH
     protectedNetworkProcess()->setTimeToLiveUserInteraction(m_sessionID, seconds, WTFMove(completionHandler));
 }
 
+void WebsiteDataStore::didHaveUserInteractionForSiteIsolation(const URL& url)
+{
+    if (url.protocolIsAbout() || url.isEmpty())
+        return;
+
+    WebCore::RegistrableDomain registrableDomain { url };
+    if (m_domainsWithUserInteractions)
+        m_domainsWithUserInteractions->add(registrableDomain);
+    else if (!m_domainsWithUserInteractionsCompletionHandler.isEmpty()) {
+        // Currently waiting for the network process's reply.
+        // Add this domain to the hash set we get from the network process
+        // since the network process may have replied before it had
+        // notififed of user interaction by the web content process.
+        m_pendingDomainsWithUserInteractions.append(registrableDomain);
+    }
+}
+
 void WebsiteDataStore::logUserInteraction(const URL& url, CompletionHandler<void()>&& completionHandler)
 {
     ASSERT(RunLoop::isMain());
@@ -1519,7 +1543,7 @@ void WebsiteDataStore::logUserInteraction(const URL& url, CompletionHandler<void
         completionHandler();
         return;
     }
-    
+
     protectedNetworkProcess()->logUserInteraction(m_sessionID, WebCore::RegistrableDomain { url }, WTFMove(completionHandler));
 }
 
@@ -2329,15 +2353,6 @@ String WebsiteDataStore::defaultNetworkCacheDirectory(const String& baseCacheDir
 #endif
 }
 
-String WebsiteDataStore::defaultApplicationCacheDirectory(const String& baseCacheDirectory)
-{
-#if PLATFORM(PLAYSTATION) || USE(GLIB)
-    return cacheDirectoryFileSystemRepresentation("applications"_s, baseCacheDirectory);
-#else
-    return cacheDirectoryFileSystemRepresentation("ApplicationCache"_s, baseCacheDirectory);
-#endif
-}
-
 String WebsiteDataStore::defaultMediaCacheDirectory(const String& baseCacheDirectory)
 {
     return cacheDirectoryFileSystemRepresentation("MediaCache"_s, baseCacheDirectory);
@@ -2858,7 +2873,7 @@ RestrictedOpenerType WebsiteDataStore::openerTypeForDomain(const WebCore::Regist
     }
 
 #if ENABLE(ADVANCED_PRIVACY_PROTECTIONS)
-    return RestrictedOpenerDomainsController::shared().lookup(domain);
+    return RestrictedOpenerDomainsController::singleton().lookup(domain);
 #else
     return RestrictedOpenerType::Unrestricted;
 #endif

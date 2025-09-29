@@ -1,8 +1,4 @@
-Blocked access to external URL https://www.localhost:9443/storage-access-api/resources/script-with-cookie-header.py?script=embedded_responder.js
-Blocked access to external URL https://www.localhost:9443/storage-access-api/resources/set-document-cookie.html?initial-cookie=unpartitioned;Secure;SameSite=None;Path=/
-
-Harness Error (TIMEOUT), message = null
 
 PASS Grants have per-frame scope
-TIMEOUT Cross-site sibling iframes should not be able to take advantage of the existing permission grant requested by others. Test timed out
+PASS Cross-site sibling iframes should not be able to take advantage of the existing permission grant requested by others.
 

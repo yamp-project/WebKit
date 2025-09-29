@@ -443,12 +443,20 @@ FontRanges CSSFontSelector::fontRangesForFamily(const FontDescription& fontDescr
 
     // Handle the generic math font family a bit differently.
     if (familyName == m_fontFamilyNames.at(FamilyNamesIndex::MathFamily)) {
-        // TODO: Check if the user has defined a preference (http://webkit.org/b/156843).
-        // Iterate through the font list to find a valid fallback.
+        // First check if the user has defined a preference.
+        const auto& settings = protectedScriptExecutionContext()->settingsValues();
+        const String& preferredMathFamily = settings.fontGenericFamilies.mathFontFamily(fontDescription.script());
+        if (!preferredMathFamily.isEmpty() && familyName != preferredMathFamily) {
+            auto ranges = fontRangesForFamily(fontDescription, AtomString(preferredMathFamily));
+            if (!ranges.isNull())
+                return { WTFMove(ranges), IsGenericFontFamily::Yes };
+        }
+
+        // Otherwise, iterate through the font list to find a valid fallback.
         for (auto& family : mathFontList()) {
             auto ranges = fontRangesForFamily(fontDescription, family);
             if (!ranges.isNull())
-                return FontRanges(WTFMove(ranges), IsGenericFontFamily::Yes);
+                return { WTFMove(ranges), IsGenericFontFamily::Yes };
         }
     }
 
@@ -457,7 +465,7 @@ FontRanges CSSFontSelector::fontRangesForFamily(const FontDescription& fontDescr
     RefPtr document = dynamicDowncast<Document>(m_context.get());
     if (RefPtr face = m_cssFontFaceSet->fontFace(fontDescriptionForLookup->fontSelectionRequest(), familyForLookup)) {
         if (document && document->settings().webAPIStatisticsEnabled())
-            ResourceLoadObserver::shared().logFontLoad(*document, familyForLookup.string(), true);
+            ResourceLoadObserver::singleton().logFontLoad(*document, familyForLookup.string(), true);
         return { face->fontRanges(*fontDescriptionForLookup, fontPaletteValues, fontFeatureValues), isGenericFontFamily };
     }
 
@@ -466,7 +474,7 @@ FontRanges CSSFontSelector::fontRangesForFamily(const FontDescription& fontDescr
 
     auto font = FontCache::forCurrentThread()->fontForFamily(*fontDescriptionForLookup, familyForLookup, { { }, { }, fontPaletteValues, fontFeatureValues, 1.0 });
     if (document && document->settings().webAPIStatisticsEnabled())
-        ResourceLoadObserver::shared().logFontLoad(*document, familyForLookup.string(), !!font);
+        ResourceLoadObserver::singleton().logFontLoad(*document, familyForLookup.string(), !!font);
     return { FontRanges { WTFMove(font) }, isGenericFontFamily };
 }
 
@@ -498,7 +506,7 @@ RefPtr<Font> CSSFontSelector::fallbackFontAt(const FontDescription& fontDescript
     auto& pictographFontFamily = context->settingsValues().fontGenericFamilies.pictographFontFamily();
     RefPtr font = FontCache::forCurrentThread()->fontForFamily(fontDescription, pictographFontFamily);
     if (RefPtr document = dynamicDowncast<Document>(context.get()); document && document->settingsValues().webAPIStatisticsEnabled)
-        ResourceLoadObserver::shared().logFontLoad(*document, pictographFontFamily, !!font);
+        ResourceLoadObserver::singleton().logFontLoad(*document, pictographFontFamily, !!font);
 
     return font;
 }

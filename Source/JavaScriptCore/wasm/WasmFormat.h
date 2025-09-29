@@ -615,30 +615,41 @@ private:
     Type m_type;
 };
 
-struct Segment {
-    WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(Segment);
-
+class Segment final : public TrailingArray<Segment, uint8_t> {
+    WTF_DEPRECATED_MAKE_FAST_ALLOCATED(Segment);
+    WTF_MAKE_NONCOPYABLE(Segment);
+    WTF_MAKE_NONMOVABLE(Segment);
+    using Base = TrailingArray<Segment, uint8_t>;
+    friend Base;
+public:
     enum class Kind : uint8_t {
         Active,
         Passive,
     };
 
-    Kind kind;
-    uint32_t sizeInBytes;
-    std::optional<I32InitExpr> offsetIfActive;
-    // Bytes are allocated at the end.
     uint8_t& byte(uint32_t pos)
     {
-        ASSERT(pos < sizeInBytes);
-        return *(reinterpret_cast<uint8_t*>(this) + sizeof(Segment) + pos);
+        return Base::at(pos);
+    }
+    uint32_t sizeInBytes() const { return Base::size(); }
+
+    Segment(size_t sizeInBytes, Kind passedKind, std::optional<I32InitExpr>&& passedOffsetIfActive)
+        : Base(sizeInBytes)
+        , m_kind(passedKind)
+        , m_offsetIfActive(WTFMove(passedOffsetIfActive))
+    {
     }
 
-    static void destroy(Segment*);
-    typedef std::unique_ptr<Segment, decltype(&Segment::destroy)> Ptr;
-    static Segment::Ptr create(std::optional<I32InitExpr>, uint32_t, Kind);
+    static std::unique_ptr<Segment> tryCreate(std::optional<I32InitExpr>, uint32_t, Kind);
 
-    bool isActive() const { return kind == Kind::Active; }
-    bool isPassive() const { return kind == Kind::Passive; }
+    bool isActive() const { return m_kind == Kind::Active; }
+    bool isPassive() const { return m_kind == Kind::Passive; }
+    Kind kind() const { return m_kind; }
+    std::optional<I32InitExpr> offsetIfActive() const { return m_offsetIfActive; }
+
+private:
+    const Kind m_kind;
+    const std::optional<I32InitExpr> m_offsetIfActive;
 };
 
 struct Element {
@@ -826,16 +837,19 @@ struct InternalFunction {
     unsigned osrEntryScratchBufferSize { 0 };
 };
 
-extern const CalleeBits NullWasmCallee;
-
 struct alignas(8) WasmCallableFunction {
     WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(WasmCallableFunction);
     using LoadLocation = CodePtr<WasmEntryPtrTag>*;
+    static constexpr ptrdiff_t offsetOfBoxedCallee() { return OBJECT_OFFSETOF(WasmCallableFunction, boxedCallee); }
+    static constexpr ptrdiff_t offsetOfTargetInstance() { return OBJECT_OFFSETOF(WasmCallableFunction, targetInstance); }
     static constexpr ptrdiff_t offsetOfEntrypointLoadLocation() { return OBJECT_OFFSETOF(WasmCallableFunction, entrypointLoadLocation); }
-    static constexpr ptrdiff_t offsetOfBoxedWasmCalleeLoadLocation() { return OBJECT_OFFSETOF(WasmCallableFunction, boxedWasmCalleeLoadLocation); }
 
-    // FIXME: This always points to the interpreter callee anyway so there's no point in having the extra indirection.
-    const CalleeBits* boxedWasmCalleeLoadLocation { &NullWasmCallee };
+    // LoadLocation's dereference.
+    static constexpr ptrdiff_t offsetOfValueOfLoadLocation() { return 0; }
+
+    bool isJS() const;
+
+    CalleeBits boxedCallee { };
     // Target instance and entrypoint are only set for wasm->wasm calls, and are otherwise nullptr. The js-specific logic occurs through import function.
     WriteBarrier<JSWebAssemblyInstance> targetInstance { };
     LoadLocation entrypointLoadLocation { };
@@ -846,13 +860,11 @@ struct alignas(8) WasmCallableFunction {
 // meant as fast lookup tables for these opcodes and do not own code.
 struct WasmToWasmImportableFunction : public WasmCallableFunction {
     WTF_DEPRECATED_MAKE_STRUCT_FAST_ALLOCATED(WasmToWasmImportableFunction);
-    static constexpr ptrdiff_t offsetOfSignatureIndex() { return OBJECT_OFFSETOF(WasmToWasmImportableFunction, typeIndex); }
     static constexpr ptrdiff_t offsetOfRTT() { return OBJECT_OFFSETOF(WasmToWasmImportableFunction, rtt); }
 
+    const RTT* rtt { nullptr };
     // FIXME: Pack type index and code pointer into one 64-bit value. See <https://bugs.webkit.org/show_bug.cgi?id=165511>.
     TypeIndex typeIndex { TypeDefinition::invalidIndex };
-    // Used when GC proposal is enabled, otherwise can be null.
-    const RTT* rtt { nullptr };
 };
 using FunctionIndexSpace = Vector<WasmToWasmImportableFunction>;
 
@@ -862,7 +874,6 @@ struct WasmOrJSImportableFunction : public WasmToWasmImportableFunction {
 
     CodePtr<WasmEntryPtrTag> importFunctionStub;
     WriteBarrier<JSObject> importFunction { };
-    CalleeBits boxedCallee { 0xBEEF };
 };
 
 struct WasmOrJSImportableFunctionCallLinkInfo final : public WasmOrJSImportableFunction {

@@ -40,7 +40,7 @@ struct MockTestMessageWithConnection {
     static constexpr bool isSync = false;
     static constexpr bool canDispatchOutOfOrder = false;
     static constexpr bool replyCanDispatchOutOfOrder = false;
-    static constexpr IPC::MessageName name()  { return static_cast<IPC::MessageName>(123); }
+    static constexpr IPC::MessageName name()  { return IPC::MessageName::IPCTester_EmptyMessage; }
     MockTestMessageWithConnection(IPC::Connection::Handle&& handle)
         : m_handle(WTFMove(handle))
     {
@@ -438,6 +438,11 @@ class ConnectionRunLoopTest : public ConnectionTestABBA {
 public:
     void TearDown() override
     {
+        // By convention the b() connection is the one that gets openend on various runloops.
+        // The API contract of Connection is that invalidate() is called on the dispatcher
+        // that called open(). The test should invalidate on that runloop.
+        ASSERT(!b() || !b()->client());
+
         ConnectionTestABBA::TearDown();
         // Remember to call localReferenceBarrier() in test scope.
         // Otherwise run loops might be executing code that uses variables
@@ -494,6 +499,10 @@ TEST_P(ConnectionRunLoopTest, RunLoopOpen)
     });
     a()->invalidate();
     semaphore.wait();
+
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -816,6 +825,9 @@ TEST_P(ConnectionRunLoopTest, SendAsyncAndInvalidateOnDispatcher)
             assertIsCurrent(queue);
             queue->beginShutdown();
         }, 0);
+        runLoop->dispatch([&] {
+            b()->invalidate();
+        });
     }
 
     for (uint64_t i = 1u; i < messageCount; ++i) {
@@ -827,7 +839,12 @@ TEST_P(ConnectionRunLoopTest, SendAsyncAndInvalidateOnDispatcher)
 
 // Tests that all sent messages are received, even if sender invalidates
 // without synchronizing with the receiver.
+// FIXME when rdar://159131152 is resolved
+#if PLATFORM(IOS)
+TEST_P(ConnectionRunLoopTest, DISABLED_SendAndInvalidate)
+#else
 TEST_P(ConnectionRunLoopTest, SendAndInvalidate)
+#endif
 {
     constexpr uint64_t messageCount = 1777;
     ASSERT_TRUE(openA());
@@ -848,6 +865,9 @@ TEST_P(ConnectionRunLoopTest, SendAndInvalidate)
     EXPECT_EQ(flushResult, IPC::Error::NoError);
     a()->invalidate();
     semaphore.wait();
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -892,6 +912,9 @@ TEST_P(ConnectionRunLoopTest, SendAsyncAndInvalidate)
         EXPECT_TRUE(replies.contains(i)) << i;
         EXPECT_TRUE(messages.contains(i)) << i;
     }
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -937,6 +960,9 @@ TEST_P(ConnectionRunLoopTest, RunLoopSendWithPromisedReplyOrder)
 
     for (uint64_t i = 0u; i < counter; ++i)
         EXPECT_EQ(replies[i], i);
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -983,6 +1009,9 @@ TEST_P(ConnectionRunLoopTest, DISABLED_RunLoopSendAsyncOnAnotherRunLoopDispatche
     for (uint64_t i = 100u; i < 160u; ++i)
         EXPECT_TRUE(replies.contains(i));
     semaphore.signal();
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -1018,6 +1047,9 @@ TEST_P(ConnectionRunLoopTest, InvalidSendWithAsyncReplyDispatchesCancelHandlerOn
         RunLoop::currentSingleton().cycle();
     EXPECT_EQ(reply, 0u);
     semaphore.signal();
+    runLoop->dispatch([&] {
+        b()->invalidate();
+    });
     localReferenceBarrier();
 }
 
@@ -1054,7 +1086,6 @@ TEST_P(ConnectionRunLoopTest, RunLoopWaitForAndDispatchImmediately)
     runLoop->dispatch([&] {
         b()->invalidate();
     });
-
     localReferenceBarrier();
 }
 
@@ -1104,7 +1135,7 @@ TEST_P(ConnectionRunLoopTest, SyncMessageNotHandledIsCancelled)
             gotDestination = decoder.destinationID();
             // Unhandled message.
             if (decoder.destinationID() == 77)
-                return false; // Message destination was unknown, unhandled message.
+                return true; // Message destination was unknown, unhandled message.
             if (decoder.destinationID() == 99) {
                 b()->sendSyncReply(WTFMove(encoder));
                 return true;

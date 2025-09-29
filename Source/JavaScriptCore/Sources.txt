@@ -111,12 +111,15 @@ b3/air/AirTmp.cpp
 b3/air/AirTmpWidth.cpp
 b3/air/AirValidate.cpp
 
+b3/B3AbstractHeap.cpp
+b3/B3AbstractHeapRepository.cpp
 b3/B3ArgumentRegValue.cpp
 b3/B3AtomicValue.cpp
 b3/B3Bank.cpp
 b3/B3BasicBlock.cpp
 b3/B3BlockInsertionSet.cpp
 b3/B3BottomTupleValue.cpp
+b3/B3BulkMemoryValue.cpp
 b3/B3BreakCriticalEdges.cpp
 b3/B3CanonicalizePrePostIncrements.cpp
 b3/B3CCallValue.cpp
@@ -159,6 +162,7 @@ b3/B3MathExtras.cpp
 b3/B3MemoryValue.cpp
 b3/B3MoveConstants.cpp
 b3/B3Opcode.cpp
+b3/B3Operations.cpp
 b3/B3OptimizeAssociativeExpressionTrees.cpp
 b3/B3Origin.cpp
 b3/B3OriginDump.cpp
@@ -470,8 +474,6 @@ disassembler/zydis/Zydis.c
 domjit/DOMJITAbstractHeap.cpp
 domjit/DOMJITHeapRange.cpp
 
-ftl/FTLAbstractHeap.cpp
-ftl/FTLAbstractHeapRepository.cpp
 ftl/FTLAvailableRecovery.cpp
 ftl/FTLCapabilities.cpp
 ftl/FTLCommonValues.cpp
@@ -618,6 +620,7 @@ inspector/agents/JSGlobalObjectAuditAgent.cpp
 inspector/agents/JSGlobalObjectDebuggerAgent.cpp
 inspector/agents/JSGlobalObjectRuntimeAgent.cpp
 
+interpreter/CachedCall.cpp
 interpreter/CLoopStack.cpp
 interpreter/CallFrame.cpp
 interpreter/Interpreter.cpp
@@ -934,8 +937,10 @@ runtime/JSNativeStdFunction.cpp
 runtime/JSONObject.cpp
 runtime/JSObject.cpp
 runtime/JSPromise.cpp
+runtime/JSPromiseAllContext.cpp
 runtime/JSPromiseConstructor.cpp
 runtime/JSPromisePrototype.cpp
+runtime/JSPromiseReaction.cpp
 runtime/JSPropertyNameEnumerator.cpp
 runtime/JSRawJSONObject.cpp
 runtime/JSRegExpStringIterator.cpp
@@ -1146,12 +1151,14 @@ wasm/WasmFunctionIPIntMetadataGenerator.cpp
 wasm/WasmGlobal.cpp
 wasm/WasmHandlerInfo.cpp
 wasm/WasmIndexOrName.cpp
+wasm/WasmInstanceAnchor.cpp
 wasm/WasmIPIntGenerator.cpp
 wasm/WasmIPIntPlan.cpp
 wasm/WasmIPIntSlowPaths.cpp @no-unify
 wasm/WasmMachineThreads.cpp
 wasm/WasmMemory.cpp
 wasm/WasmMemoryInformation.cpp
+wasm/WasmMergedProfile.cpp
 wasm/WasmModule.cpp
 wasm/WasmModuleInformation.cpp
 wasm/WasmNameSectionParser.cpp
@@ -1196,6 +1203,7 @@ wasm/js/WasmToJS.h
 wasm/js/WebAssemblyArrayConstructor.cpp
 wasm/js/WebAssemblyArrayPrototype.cpp
 wasm/js/WebAssemblyBuiltin.cpp
+wasm/js/WebAssemblyBuiltinTrampoline.cpp
 wasm/js/WebAssemblyCompileErrorConstructor.cpp
 wasm/js/WebAssemblyCompileErrorPrototype.cpp
 wasm/js/WebAssemblyCompileOptions.cpp
@@ -1225,6 +1233,16 @@ wasm/js/WebAssemblyTablePrototype.cpp
 wasm/js/WebAssemblyTagConstructor.cpp
 wasm/js/WebAssemblyTagPrototype.cpp
 wasm/js/WebAssemblyWrapperFunction.cpp
+
+wasm/debugger/WasmBreakpointManager.cpp
+wasm/debugger/WasmDebugServer.cpp
+wasm/debugger/WasmDebugServerUtilities.cpp
+wasm/debugger/WasmExecutionHandler.cpp
+wasm/debugger/WasmMemoryHandler.cpp
+wasm/debugger/WasmModuleManager.cpp
+wasm/debugger/WasmQueryHandler.cpp
+wasm/debugger/WasmVirtualAddress.cpp
+wasm/debugger/WasmModuleDebugInfo.cpp
 
 yarr/RegularExpression.cpp
 yarr/YarrCanonicalizeUCS2.cpp

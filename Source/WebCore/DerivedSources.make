@@ -416,7 +416,9 @@ JS_BINDING_IDLS := \
     $(WebCore)/Modules/mediacapabilities/TransferFunction.idl \
     $(WebCore)/Modules/mediacapabilities/VideoConfiguration.idl \
     $(WebCore)/Modules/mediacapabilities/WorkerNavigator+MediaCapabilities.idl \
+    $(WebCore)/Modules/mediacontrols/DOMWindow+MediaControls.idl \
     $(WebCore)/Modules/mediacontrols/MediaControlsHost.idl \
+    $(WebCore)/Modules/mediacontrols/MediaControlsUtils.idl \
     $(WebCore)/Modules/mediarecorder/BlobEvent.idl \
     $(WebCore)/Modules/mediarecorder/MediaRecorder.idl \
     $(WebCore)/Modules/mediarecorder/MediaRecorderErrorEvent.idl \
@@ -483,6 +485,7 @@ JS_BINDING_IDLS := \
     $(WebCore)/Modules/mediastream/RTCDtlsTransport.idl \
     $(WebCore)/Modules/mediastream/RTCDtlsTransportState.idl \
     $(WebCore)/Modules/mediastream/RTCEncodedAudioFrame.idl \
+    $(WebCore)/Modules/mediastream/RTCEncodedStreams.idl \
     $(WebCore)/Modules/mediastream/RTCEncodedVideoFrame.idl \
     $(WebCore)/Modules/mediastream/RTCError.idl \
     $(WebCore)/Modules/mediastream/RTCErrorDetailType.idl \
@@ -630,16 +633,25 @@ JS_BINDING_IDLS := \
     $(WebCore)/Modules/streams/ByteLengthQueuingStrategy.idl \
     $(WebCore)/Modules/streams/CountQueuingStrategy.idl \
     $(WebCore)/Modules/streams/GenericTransformStream.idl \
+    $(WebCore)/Modules/streams/QueuingStrategy.idl \
+    $(WebCore)/Modules/streams/QueuingStrategySize.idl \
     $(WebCore)/Modules/streams/ReadableByteStreamController.idl \
-    $(WebCore)/Modules/streams/ReadableStream.idl \
     $(WebCore)/Modules/streams/ReadableStreamBYOBReader.idl \
     $(WebCore)/Modules/streams/ReadableStreamBYOBRequest.idl \
+    $(WebCore)/Modules/streams/ReadableStream.idl \
     $(WebCore)/Modules/streams/ReadableStreamDefaultController.idl \
     $(WebCore)/Modules/streams/ReadableStreamDefaultReader.idl \
+    $(WebCore)/Modules/streams/ReadableStreamReadResult.idl \
     $(WebCore)/Modules/streams/ReadableStreamSink.idl \
     $(WebCore)/Modules/streams/ReadableStreamSource.idl \
+    $(WebCore)/Modules/streams/ReadableStreamType.idl \
     $(WebCore)/Modules/streams/TransformStream.idl \
     $(WebCore)/Modules/streams/TransformStreamDefaultController.idl \
+    $(WebCore)/Modules/streams/UnderlyingSource.idl \
+    $(WebCore)/Modules/streams/UnderlyingSourceStartCallback.idl \
+    $(WebCore)/Modules/streams/UnderlyingSourceCancelCallback.idl \
+    $(WebCore)/Modules/streams/UnderlyingSourcePullCallback.idl \
+    $(WebCore)/Modules/streams/UnderlyingSourceStartCallback.idl \
     $(WebCore)/Modules/streams/WritableStream.idl \
     $(WebCore)/Modules/streams/WritableStreamDefaultController.idl \
     $(WebCore)/Modules/streams/WritableStreamDefaultWriter.idl \
@@ -981,6 +993,9 @@ JS_BINDING_IDLS := \
     $(WebCore)/css/CSSFontFaceRule.idl \
     $(WebCore)/css/CSSFontFeatureValuesRule.idl \
     $(WebCore)/css/CSSFontPaletteValuesRule.idl \
+    $(WebCore)/css/CSSFunctionDeclarations.idl \
+    $(WebCore)/css/CSSFunctionDescriptors.idl \
+    $(WebCore)/css/CSSFunctionRule.idl \
     $(WebCore)/css/CSSGroupingRule.idl \
     $(WebCore)/css/CSSImportRule.idl \
     $(WebCore)/css/CSSLayerBlockRule.idl \
@@ -1191,7 +1206,6 @@ JS_BINDING_IDLS := \
     $(WebCore)/dom/NodeList.idl \
     $(WebCore)/dom/NonDocumentTypeChildNode.idl \
     $(WebCore)/dom/NonElementParentNode.idl \
-    $(WebCore)/dom/OverflowEvent.idl \
     $(WebCore)/dom/Observable.idl \
     $(WebCore)/dom/ObservableInspector.idl \
     $(WebCore)/dom/ObservableInspectorAbortCallback.idl \
@@ -1353,7 +1367,7 @@ JS_BINDING_IDLS := \
     $(WebCore)/html/ImageBitmapOptions.idl \
     $(WebCore)/html/ImageData.idl \
     $(WebCore)/html/ImageDataSettings.idl \
-    $(WebCore)/html/ImageDataStorageFormat.idl \
+    $(WebCore)/html/ImageDataPixelFormat.idl \
     $(WebCore)/html/MediaController.idl \
     $(WebCore)/html/MediaEncryptedEvent.idl \
     $(WebCore)/html/MediaError.idl \
@@ -1528,6 +1542,7 @@ JS_BINDING_IDLS := \
     $(WebCore)/page/IntersectionObserver.idl \
     $(WebCore)/page/IntersectionObserverCallback.idl \
     $(WebCore)/page/IntersectionObserverEntry.idl \
+    $(WebCore)/page/LargestContentfulPaint.idl \
     $(WebCore)/page/Location.idl \
     $(WebCore)/page/NavigateEvent.idl \
     $(WebCore)/page/Navigation.idl \
@@ -1552,6 +1567,7 @@ JS_BINDING_IDLS := \
     $(WebCore)/page/NavigatorServiceWorker.idl \
     $(WebCore)/page/NavigatorShare.idl \
     $(WebCore)/page/NavigatorStorage.idl \
+    $(WebCore)/page/PaintTimingMixin.idl \
     $(WebCore)/page/Performance+EventCounts.idl \
     $(WebCore)/page/Performance+NavigationTiming.idl \
     $(WebCore)/page/Performance+PerformanceTimeline.idl \
@@ -2039,7 +2055,7 @@ DOMJITAbstractHeapRepository.h : $(WebCore)/domjit/generate-abstract-heap.rb $(W
 
 all : XMLViewerCSS.h
 
-XMLViewerCSS.h : $(WebCore)/xml/XMLViewer.css
+XMLViewerCSS.h : $(WebCore)/xml/XMLViewer.css $(JavaScriptCore_SCRIPTS_DIR)/cssmin.py $(JavaScriptCore_SCRIPTS_DIR)/xxd.pl
 	$(PYTHON) $(JavaScriptCore_SCRIPTS_DIR)/cssmin.py < "$(WebCore)/xml/XMLViewer.css" > XMLViewer.min.css
 	$(PERL) $(JavaScriptCore_SCRIPTS_DIR)/xxd.pl XMLViewer_css XMLViewer.min.css XMLViewerCSS.h
 	$(DELETE) XMLViewer.min.css
@@ -2050,7 +2066,7 @@ XMLViewerCSS.h : $(WebCore)/xml/XMLViewer.css
 
 all : XMLViewerJS.h
 
-XMLViewerJS.h : $(WebCore)/xml/XMLViewer.js
+XMLViewerJS.h : $(WebCore)/xml/XMLViewer.js $(JavaScriptCore_SCRIPTS_DIR)/jsmin.py $(JavaScriptCore_SCRIPTS_DIR)/xxd.pl
 	$(PYTHON) $(JavaScriptCore_SCRIPTS_DIR)/jsmin.py < "$(WebCore)/xml/XMLViewer.js" > XMLViewer.min.js
 	$(PERL) $(JavaScriptCore_SCRIPTS_DIR)/xxd.pl XMLViewer_js XMLViewer.min.js XMLViewerJS.h
 	$(DELETE) XMLViewer.min.js
@@ -2119,6 +2135,7 @@ MODERN_MEDIA_CONTROLS_STYLE_SHEETS = \
     $(WebCore)/Modules/modern-media-controls/controls/slider.css \
     $(WebCore)/Modules/modern-media-controls/controls/status-label.css \
     $(WebCore)/Modules/modern-media-controls/controls/text-tracks.css \
+    $(WebCore)/Modules/modern-media-controls/controls/time-control.css \
     $(WebCore)/Modules/modern-media-controls/controls/time-label.css \
     $(WebCore)/Modules/modern-media-controls/controls/tvos-media-controls.css \
     $(WebCore)/Modules/modern-media-controls/controls/vision-media-controls.css \
@@ -2643,12 +2660,8 @@ WebCore_BUILTINS_SOURCES = \
     $(WebCore)/Modules/compression/DecompressionStream.js \
     $(WebCore)/Modules/streams/ByteLengthQueuingStrategy.js \
     $(WebCore)/Modules/streams/CountQueuingStrategy.js \
-    $(WebCore)/Modules/streams/ReadableByteStreamController.js \
-    $(WebCore)/Modules/streams/ReadableByteStreamInternals.js \
-    $(WebCore)/Modules/streams/ReadableStreamBYOBRequest.js \
     $(WebCore)/Modules/streams/ReadableStreamDefaultController.js \
     $(WebCore)/Modules/streams/ReadableStreamInternals.js \
-    $(WebCore)/Modules/streams/ReadableStreamBYOBReader.js \
     $(WebCore)/Modules/streams/ReadableStreamDefaultReader.js \
     $(WebCore)/Modules/streams/StreamInternals.js \
     $(WebCore)/Modules/streams/TransformStreamDefaultController.js \

@@ -31,9 +31,10 @@
 #include "config.h"
 #include "InspectorDOMAgent.h"
 
-#include "AXObjectCache.h"
+#include "AXObjectCacheInlines.h"
 #include "AccessibilityNodeObject.h"
-#include "AddEventListenerOptions.h"
+#include "AccessibilityObjectInlines.h"
+#include "AddEventListenerOptionsInlines.h"
 #include "Attr.h"
 #include "AudioTrack.h"
 #include "AudioTrackConfiguration.h"
@@ -3169,6 +3170,7 @@ Inspector::Protocol::ErrorStringOr<void> InspectorDOMAgent::setAllowEditingUserA
     return { };
 }
 
+#if ENABLE(VIDEO)
 static Inspector::Protocol::DOM::VideoProjectionMetadataKind videoProjectionMetadataKind(VideoProjectionMetadataKind kind)
 {
     switch (kind) {
@@ -3190,6 +3192,7 @@ static Inspector::Protocol::DOM::VideoProjectionMetadataKind videoProjectionMeta
     ASSERT_NOT_REACHED();
     return Inspector::Protocol::DOM::VideoProjectionMetadataKind::Unknown;
 }
+#endif
 
 Inspector::Protocol::ErrorStringOr<Ref<Inspector::Protocol::DOM::MediaStats>> InspectorDOMAgent::getMediaStats(Inspector::Protocol::DOM::NodeId nodeId)
 {

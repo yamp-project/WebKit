@@ -827,6 +827,7 @@ localizedStrings["Format: Short Hex with Alpha"] = "Format: Short Hex with Alpha
 localizedStrings["Forward (%s)"] = "Forward (%s)";
 localizedStrings["Fragment"] = "Fragment";
 localizedStrings["Fragment Shader"] = "Fragment Shader";
+localizedStrings["Frame"] = "Frame";
 localizedStrings["Frame %d"] = "Frame %d";
 localizedStrings["Frame %d \u2014 %s"] = "Frame %d \u2014 %s";
 localizedStrings["Frames"] = "Frames";
@@ -1516,6 +1517,7 @@ localizedStrings["Search Resource Content"] = "Search Resource Content";
 localizedStrings["Search Tab Name"] = "Search";
 /* Title of Search Tab with keyboard shortcut */
 localizedStrings["Search Tab Title"] = "Search (%s)";
+localizedStrings["Search:"] = "Search:";
 /* Settings tab label for search related settings */
 localizedStrings["Search: @ Settings"] = "Search:";
 localizedStrings["Searching %s"] = "Searching %s";
@@ -1881,6 +1883,7 @@ localizedStrings["Use case sensitive autocomplete"] = "Use case sensitive autoco
 localizedStrings["Use default media styles"] = "Use default media styles";
 localizedStrings["Use fuzzy matching for CSS code completion"] = "Use fuzzy matching for CSS code completion";
 localizedStrings["Use mock capture devices"] = "Use mock capture devices";
+localizedStrings["Use strict word boundary checks for glob pattern matching"] = "Use strict word boundary checks for glob pattern matching";
 localizedStrings["User Agent"] = "User Agent";
 localizedStrings["User Agent Style Sheet"] = "User Agent Style Sheet";
 localizedStrings["User Style Sheet"] = "User Style Sheet";

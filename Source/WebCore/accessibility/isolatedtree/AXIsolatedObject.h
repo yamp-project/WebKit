@@ -61,11 +61,16 @@ public:
     std::optional<AXID> treeID() const final { return tree()->treeID(); }
     String debugDescriptionInternal(bool, std::optional<OptionSet<AXDebugStringOption>> = std::nullopt) const final;
 
+    void updateFromData(IsolatedObjectData&&);
+
     void attachPlatformWrapper(AccessibilityObjectWrapper*);
     bool isDetached() const final;
     bool isTable() const final { return boolAttributeValue(AXProperty::IsTable); }
     bool isExposableTable() const final { return boolAttributeValue(AXProperty::IsExposableTable); }
     bool hasClickHandler() const final { return boolAttributeValue(AXProperty::HasClickHandler); }
+    bool hasCursorPointer() const final { return boolAttributeValue(AXProperty::HasCursorPointer);  }
+    bool hasPointerEventsNone() const final { return boolAttributeValue(AXProperty::HasPointerEventsNone);  }
+    bool showsCursorOnHover() const final { return boolAttributeValue(AXProperty::ShowsCursorOnHover); }
     FloatRect relativeFrame() const final;
 
     bool hasAttachmentTag() const final { return elementName() == ElementName::HTML_attachment; }
@@ -87,6 +92,12 @@ public:
     bool canSetFocusAttribute() const final { return boolAttributeValue(AXProperty::CanSetFocusAttribute); }
     AttributedStringStyle stylesForAttributedString() const final;
     Color textColor() const final { return colorAttributeValue(AXProperty::TextColor); }
+
+#if ENABLE_ACCESSIBILITY_LOCAL_FRAME
+    // Returns the child or parent object that crosses a local frame boundary.
+    AXIsolatedObject* crossFrameParentObject() const final;
+    AXIsolatedObject* crossFrameChildObject() const final;
+#endif
 
 #if ENABLE(AX_THREAD_TEXT_APIS)
     const AXTextRuns* textRuns() const;
@@ -243,6 +254,7 @@ private:
     // Table cell support.
     bool isTableCell() const final;
     bool isExposedTableCell() const final { return boolAttributeValue(AXProperty::IsExposedTableCell); }
+    AXCoreObject* parentTableIfTableCell() const final;
     // Returns the start location and row span of the cell.
     std::pair<unsigned, unsigned> rowIndexRange() const final { return indexRangePairAttributeValue(AXProperty::RowIndexRange); }
     // Returns the start location and column span of the cell.
@@ -259,7 +271,10 @@ private:
     unsigned columnIndex() const final { return unsignedAttributeValue(AXProperty::ColumnIndex); }
 
     // Table row support.
-    bool isTableRow() const final { return boolAttributeValue(AXProperty::IsTableRow); }
+    AXCoreObject* parentTable() const final;
+    bool isTableRow() const final;
+    AXCoreObject* parentTableIfExposedTableRow() const final;
+    bool isExposedTableRow() const final { return boolAttributeValue(AXProperty::IsExposedTableRow); }
     unsigned rowIndex() const final { return unsignedAttributeValue(AXProperty::RowIndex); }
 
     // ARIA tree/grid row support.
@@ -319,11 +334,19 @@ private:
     bool supportsDropping() const final { return boolAttributeValue(AXProperty::SupportsDropping); }
     bool supportsDragging() const final { return boolAttributeValue(AXProperty::SupportsDragging); }
     bool isGrabbed() final { return boolAttributeValue(AXProperty::IsGrabbed); }
+    bool isHiddenUntilFoundContainer() const final { return boolAttributeValue(AXProperty::IsHiddenUntilFoundContainer); }
     Vector<String> determineDropEffects() const final;
     AXIsolatedObject* accessibilityHitTest(const IntPoint&) const final;
-    AXIsolatedObject* focusedUIElement() const final;
+    AXIsolatedObject* focusedUIElement() const final
+    {
+        return tree()->focusedNode().get();
+    }
+    AXIsolatedObject* focusedUIElementInAnyLocalFrame() const final
+    {
+        return tree()->focusedNode().get();
+    }
     AXIsolatedObject* internalLinkElement() const final { return objectAttributeValue(AXProperty::InternalLinkElement); }
-    AccessibilityChildrenVector radioButtonGroup() const final { return tree()->objectsForIDs(vectorAttributeValue<AXID>(AXProperty::RadioButtonGroup)); }
+    AccessibilityChildrenVector radioButtonGroup() const final { return tree()->objectsForIDs(vectorAttributeValue<AXID>(AXProperty::RadioButtonGroupMembers)); }
     AXIsolatedObject* scrollBar(AccessibilityOrientation) final;
     const String placeholderValue() const final { return stringAttributeValue(AXProperty::PlaceholderValue); }
     String abbreviation() const final { return stringAttributeValue(AXProperty::Abbreviation); }
@@ -493,6 +516,8 @@ private:
 
     // Functions that should never be called on an isolated tree object. ASSERT that these are not reached;
     bool isAccessibilityRenderObject() const final;
+    bool isAccessibilityNodeObject() const final;
+    bool isAXLocalFrame() const final { return false; }
     bool isAXRemoteFrame() const final { return false; }
     bool isNativeTextControl() const final;
     bool isMockObject() const final;
@@ -537,6 +562,7 @@ private:
 
     String text() const final;
     unsigned textLength() const final;
+    String revealableText() const final { return stringAttributeValue(AXProperty::RevealableText); }
 #if PLATFORM(COCOA)
     RetainPtr<NSAttributedString> attributedStringForTextMarkerRange(AXTextMarkerRange&&, SpellCheck) const final;
 #endif

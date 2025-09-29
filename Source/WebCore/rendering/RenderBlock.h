@@ -31,6 +31,7 @@
 
 namespace WebCore {
 
+class LayoutScope;
 class LogicalSelectionOffsetCaches;
 class RenderInline;
 class RenderText;
@@ -57,6 +58,7 @@ class RenderBlock : public RenderBox {
 public:
     // FIXME: This is temporary to allow us to move code from RenderBlock into RenderBlockFlow that accesses member variables that we haven't moved out of
     // RenderBlock yet.
+    friend class LayoutScope;
     friend class RenderBlockFlow;
     virtual ~RenderBlock();
 
@@ -146,7 +148,7 @@ public:
         ExpansionBehavior = ExpansionBehavior::defaultBehavior());
     static TextRun constructTextRun(const RenderText&, unsigned offset, unsigned length, const RenderStyle&,
         ExpansionBehavior = ExpansionBehavior::defaultBehavior());
-    static TextRun constructTextRun(std::span<const LChar> characters, const RenderStyle&,
+    static TextRun constructTextRun(std::span<const Latin1Character> characters, const RenderStyle&,
         ExpansionBehavior = ExpansionBehavior::defaultBehavior());
     static TextRun constructTextRun(std::span<const char16_t> characters, const RenderStyle&,
         ExpansionBehavior = ExpansionBehavior::defaultBehavior());

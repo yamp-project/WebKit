@@ -54,9 +54,7 @@
 #include "StyleLengthWrapper+Platform.h"
 #include "StylePrimitiveNumericTypes+Evaluation.h"
 #include "StyleResolver.h"
-#include "StyleScrollSnapPoints.h"
 #include "StyleSelfAlignmentData.h"
-#include "StyleTextEdge.h"
 #include "StyleTreeResolver.h"
 #include "TransformOperationData.h"
 #include <algorithm>
@@ -109,8 +107,6 @@ struct SameSizeAsRenderStyle : CanMakeCheckedPtr<SameSizeAsRenderStyle> {
 static_assert(sizeof(RenderStyle) == sizeof(SameSizeAsRenderStyle), "RenderStyle should stay small");
 
 static_assert(PublicPseudoIDBits == enumToUnderlyingType(PseudoId::FirstInternalPseudoId) - enumToUnderlyingType(PseudoId::FirstPublicPseudoId));
-
-static_assert(!(static_cast<unsigned>(maxTextDecorationLineValue) >> TextDecorationLineBits));
 
 static_assert(!(static_cast<unsigned>(maxTextTransformValue) >> TextTransformBits));
 
@@ -558,14 +554,14 @@ unsigned RenderStyle::hashForTextAutosizing() const
 {
     // FIXME: Not a very smart hash. Could be improved upon. See <https://bugs.webkit.org/show_bug.cgi?id=121131>.
     unsigned hash = m_nonInheritedData->miscData->usedAppearance;
-    hash ^= m_nonInheritedData->rareData->lineClamp.value();
+    hash ^= m_nonInheritedData->rareData->lineClamp.valueForTextAutosizingHash();
     hash ^= m_rareInheritedData->overflowWrap;
     hash ^= m_rareInheritedData->nbspMode;
     hash ^= m_rareInheritedData->lineBreak;
     hash ^= WTF::FloatHash<float>::hash(m_inheritedData->specifiedLineHeight.value());
     hash ^= computeFontHash(m_inheritedData->fontData->fontCascade);
-    hash ^= WTF::FloatHash<float>::hash(Style::evaluate(m_inheritedData->borderHorizontalSpacing));
-    hash ^= WTF::FloatHash<float>::hash(Style::evaluate(m_inheritedData->borderVerticalSpacing));
+    hash ^= WTF::FloatHash<float>::hash(m_inheritedData->borderHorizontalSpacing.unresolvedValue());
+    hash ^= WTF::FloatHash<float>::hash(m_inheritedData->borderVerticalSpacing.unresolvedValue());
     hash ^= m_inheritedFlags.boxDirection;
     hash ^= m_inheritedFlags.rtlOrdering;
     hash ^= m_nonInheritedFlags.position;
@@ -618,7 +614,7 @@ bool RenderStyle::isIdempotentTextAutosizingCandidate(AutosizeStatus status) con
                     return false;
                 if (auto fixedHeight = height().tryFixed(); fixedHeight && specifiedLineHeight().isFixed()) {
                     float specifiedSize = specifiedFontSize();
-                    if (fixedHeight->value == specifiedSize && specifiedLineHeight().value() == specifiedSize)
+                    if (fixedHeight->resolveZoom(Style::ZoomNeeded { }) == specifiedSize && specifiedLineHeight().value() == specifiedSize)
                         return false;
                 }
                 return true;
@@ -627,7 +623,7 @@ bool RenderStyle::isIdempotentTextAutosizingCandidate(AutosizeStatus status) con
                 if (auto fixedHeight = height().tryFixed(); specifiedLineHeight().isFixed() && fixedHeight) {
                     float specifiedSize = specifiedFontSize();
                     if (specifiedLineHeight().value() - specifiedSize > smallMinimumDifferenceThresholdBetweenLineHeightAndSpecifiedFontSizeForBoostingText
-                        && fixedHeight->value - specifiedSize > smallMinimumDifferenceThresholdBetweenLineHeightAndSpecifiedFontSizeForBoostingText) {
+                        && fixedHeight->resolveZoom(Style::ZoomNeeded { }) - specifiedSize > smallMinimumDifferenceThresholdBetweenLineHeightAndSpecifiedFontSizeForBoostingText) {
                         return true;
                     }
                 }
@@ -661,7 +657,7 @@ bool RenderStyle::isIdempotentTextAutosizingCandidate(AutosizeStatus status) con
         return false;
     }
 
-    if (hasBackgroundImage() && backgroundRepeat() == FillRepeatXY { FillRepeat::NoRepeat, FillRepeat::NoRepeat })
+    if (hasBackgroundImage() && backgroundLayers().first().repeat() == FillRepeat::NoRepeat)
         return false;
 
     return true;
@@ -832,7 +828,7 @@ static bool rareDataChangeRequiresLayout(const StyleRareNonInheritedData& first,
     if (first.columnGap != second.columnGap || first.rowGap != second.rowGap)
         return true;
 
-    if (!arePointingToEqualData(first.boxReflect, second.boxReflect))
+    if (first.boxReflect != second.boxReflect)
         return true;
 
     // If the counter directives change, trigger a relayout to re-calculate counter values and rebuild the counter node tree.
@@ -1229,7 +1225,7 @@ bool RenderStyle::changeRequiresLayerRepaint(const RenderStyle& other, OptionSet
 
     bool currentColorDiffers = m_inheritedData->color != other.m_inheritedData->color;
     if (currentColorDiffers) {
-        if (filter().requiresRepaintForCurrentColorChange() || backdropFilter().requiresRepaintForCurrentColorChange())
+        if (filter().hasFilterThatRequiresRepaintForCurrentColorChange() || backdropFilter().hasFilterThatRequiresRepaintForCurrentColorChange())
             return true;
     }
 
@@ -1338,7 +1334,7 @@ bool RenderStyle::changeRequiresRepaint(const RenderStyle& other, OptionSet<Styl
     if (!requiresPainting(*this) && !requiresPainting(other))
         return false;
 
-    if (m_inheritedFlags.visibility != other.m_inheritedFlags.visibility
+    if (usedVisibility() != other.usedVisibility()
         || m_inheritedFlags.printColorAdjust != other.m_inheritedFlags.printColorAdjust
         || m_inheritedFlags.insideLink != other.m_inheritedFlags.insideLink)
         return true;
@@ -1621,7 +1617,7 @@ void RenderStyle::conservativelyCollectChangedAnimatableProperties(const RenderS
             changingProperties.m_properties.set(CSSPropertyTransformOriginZ);
         if (first.transformBox != second.transformBox)
             changingProperties.m_properties.set(CSSPropertyTransformBox);
-        if (first.operations != second.operations)
+        if (first.transform != second.transform)
             changingProperties.m_properties.set(CSSPropertyTransform);
     };
 
@@ -2021,7 +2017,6 @@ void RenderStyle::conservativelyCollectChangedAnimatableProperties(const RenderS
         // marquee
         // boxReflect
         // pageSize
-        // pageSizeType
         // overscrollBehaviorX
         // overscrollBehaviorY
         // applePayButtonStyle
@@ -2098,8 +2093,6 @@ void RenderStyle::conservativelyCollectChangedAnimatableProperties(const RenderS
             changingProperties.m_properties.set(CSSPropertyTextIndent);
         if (first.textUnderlineOffset != second.textUnderlineOffset)
             changingProperties.m_properties.set(CSSPropertyTextUnderlineOffset);
-        if (first.wordSpacing != second.wordSpacing)
-            changingProperties.m_properties.set(CSSPropertyWordSpacing);
         if (first.miterLimit != second.miterLimit)
             changingProperties.m_properties.set(CSSPropertyStrokeMiterlimit);
         if (first.widows != second.widows)
@@ -2164,7 +2157,7 @@ void RenderStyle::conservativelyCollectChangedAnimatableProperties(const RenderS
             changingProperties.m_properties.set(CSSPropertyStrokeLinejoin);
         if (first.hasSetStrokeWidth != second.hasSetStrokeWidth || first.strokeWidth != second.strokeWidth)
             changingProperties.m_properties.set(CSSPropertyStrokeWidth);
-        if (!arePointingToEqualData(first.listStyleImage, second.listStyleImage))
+        if (first.listStyleImage != second.listStyleImage)
             changingProperties.m_properties.set(CSSPropertyListStyleImage);
         if (first.scrollbarColor != second.scrollbarColor)
             changingProperties.m_properties.set(CSSPropertyScrollbarColor);
@@ -2277,7 +2270,7 @@ bool RenderStyle::affectedByTransformOrigin() const
 
 FloatPoint RenderStyle::computePerspectiveOrigin(const FloatRect& boundingBox) const
 {
-    return boundingBox.location() + Style::evaluate(perspectiveOrigin(), boundingBox.size());
+    return boundingBox.location() + Style::evaluate<FloatPoint>(perspectiveOrigin(), boundingBox.size(), Style::ZoomNeeded { });
 }
 
 void RenderStyle::applyPerspective(TransformationMatrix& transform, const FloatPoint& originTranslate) const
@@ -2299,8 +2292,8 @@ void RenderStyle::applyPerspective(TransformationMatrix& transform, const FloatP
 FloatPoint3D RenderStyle::computeTransformOrigin(const FloatRect& boundingBox) const
 {
     FloatPoint3D originTranslate;
-    originTranslate.setXY(boundingBox.location() + floatPointForLengthPoint(Style::toPlatform(transformOrigin().xy()), boundingBox.size()));
-    originTranslate.setZ(transformOriginZ().value);
+    originTranslate.setXY(boundingBox.location() + Style::evaluate<FloatPoint>(transformOrigin().xy(), boundingBox.size(), Style::ZoomNeeded { }));
+    originTranslate.setZ(transformOriginZ().resolveZoom(Style::ZoomNeeded { }));
     return originTranslate;
 }
 
@@ -2372,20 +2365,9 @@ void RenderStyle::setPageScaleTransform(float scale)
     if (scale == 1)
         return;
 
-    setTransform(TransformOperations { ScaleTransformOperation::create(scale, scale, TransformOperation::Type::Scale) });
+    setTransform(Style::Transform { Style::TransformFunction { ScaleTransformOperation::create(scale, scale, TransformOperation::Type::Scale) } });
     setTransformOriginX(0_css_px);
     setTransformOriginY(0_css_px);
-}
-
-StyleImage* RenderStyle::listStyleImage() const
-{
-    return m_rareInheritedData->listStyleImage.get();
-}
-
-void RenderStyle::setListStyleImage(RefPtr<StyleImage>&& v)
-{
-    if (m_rareInheritedData->listStyleImage != v)
-        m_rareInheritedData.access().listStyleImage = WTFMove(v);
 }
 
 const Color& RenderStyle::color() const
@@ -2406,24 +2388,6 @@ void RenderStyle::setColor(Color&& v)
 void RenderStyle::setVisitedLinkColor(Color&& v)
 {
     SET_VAR(m_inheritedData, visitedLinkColor, WTFMove(v));
-}
-
-bool RenderStyle::hasEntirelyFixedBackground() const
-{
-    for (auto* layer = &backgroundLayers(); layer; layer = layer->next()) {
-        if (!(layer->image() && layer->attachment() == FillAttachment::FixedBackground))
-            return false;
-    }
-    return true;
-}
-
-bool RenderStyle::hasAnyBackgroundClipText() const
-{
-    for (auto* layer = &backgroundLayers(); layer; layer = layer->next()) {
-        if (layer->clip() == FillBox::Text)
-            return true;
-    }
-    return false;
 }
 
 const CounterDirectiveMap& RenderStyle::counterDirectives() const
@@ -2456,64 +2420,50 @@ const AtomString& RenderStyle::hyphenString() const
 
 void RenderStyle::adjustAnimations()
 {
-    auto* animationList = m_nonInheritedData->miscData->animations.get();
-    if (!animationList)
+    if (m_nonInheritedData->miscData->animations.isNone())
         return;
 
+    auto& animationList = ensureAnimations();
+
     // Get rid of empty animations and anything beyond them
-    for (size_t i = 0, size = animationList->size(); i < size; ++i) {
-        if (animationList->animation(i).isEmpty()) {
-            animationList->resize(i);
+    for (size_t i = 0, size = animationList.size(); i < size; ++i) {
+        if (animationList[i].isEmpty()) {
+            animationList.resize(i);
             break;
         }
     }
 
-    if (animationList->isEmpty()) {
+    if (animationList.isEmpty()) {
         clearAnimations();
         return;
     }
 
     // Repeat patterns into layers that don't have some properties set.
-    animationList->fillUnsetProperties();
+    animationList.fillUnsetProperties();
 }
 
 void RenderStyle::adjustTransitions()
 {
-    auto* transitionList = m_nonInheritedData->miscData->transitions.get();
-    if (!transitionList)
+    if (m_nonInheritedData->miscData->transitions.isNone())
         return;
 
+    auto& transitionList = ensureTransitions();
+
     // Get rid of empty transitions and anything beyond them
-    for (size_t i = 0, size = transitionList->size(); i < size; ++i) {
-        if (transitionList->animation(i).isEmpty()) {
-            transitionList->resize(i);
+    for (size_t i = 0, size = transitionList.size(); i < size; ++i) {
+        if (transitionList[i].isEmpty()) {
+            transitionList.resize(i);
             break;
         }
     }
 
-    if (transitionList->isEmpty()) {
+    if (transitionList.isEmpty()) {
         clearTransitions();
         return;
     }
 
     // Repeat patterns into layers that don't have some properties set.
-    transitionList->fillUnsetProperties();
-}
-
-AnimationList& RenderStyle::ensureAnimations()
-{
-    auto& animations = m_nonInheritedData.access().miscData.access().animations;
-    if (!animations)
-        animations = AnimationList::create();
-    return *animations;
-}
-
-AnimationList& RenderStyle::ensureTransitions()
-{
-    auto& transitions = m_nonInheritedData.access().miscData.access().transitions;
-    if (!transitions)
-        transitions = AnimationList::create();
-    return *transitions;
+    transitionList.fillUnsetProperties();
 }
 
 const FontMetrics& RenderStyle::metricsOfPrimaryFont() const
@@ -2545,16 +2495,6 @@ float RenderStyle::specifiedFontSize() const
 float RenderStyle::computedFontSize() const
 {
     return fontDescription().computedSize();
-}
-
-const Length& RenderStyle::computedLetterSpacing() const
-{
-    return fontCascade().computedLetterSpacing();
-}
-
-const Length& RenderStyle::computedWordSpacing() const
-{
-    return fontCascade().computedWordSpacing();
 }
 
 TextSpacingTrim RenderStyle::textSpacingTrim() const
@@ -2637,35 +2577,9 @@ float RenderStyle::computeLineHeight(const Length& lineHeightLength) const
         return metricsOfPrimaryFont().lineSpacing();
 
     if (lineHeightLength.isPercentOrCalculated())
-        return minimumValueForLength(lineHeightLength, computedFontSize()).toFloat();
+        return minimumValueForLength(lineHeightLength, computedFontSize(), 1.0f /* FIXME FIND ZOOM */).toFloat();
 
     return lineHeightLength.value();
-}
-
-void RenderStyle::setLetterSpacing(Length&& spacing)
-{
-    if (fontCascade().computedLetterSpacing() == spacing)
-        return;
-
-    bool oldShouldDisableLigatures = fontDescription().shouldDisableLigaturesForSpacing();
-    m_inheritedData.access().fontData.access().fontCascade.setLetterSpacing(WTFMove(spacing));
-
-    // Switching letter-spacing between zero and non-zero requires updating fonts (to enable/disable ligatures)
-    bool shouldDisableLigatures = fontCascade().letterSpacing();
-    if (oldShouldDisableLigatures != shouldDisableLigatures) {
-        auto description = fontDescription();
-        description.setShouldDisableLigaturesForSpacing(fontCascade().letterSpacing());
-        setFontDescription(WTFMove(description));
-    }
-}
-
-void RenderStyle::setWordSpacing(Length&& spacing)
-{
-    ASSERT(LengthType::Normal != spacing); // should have converted to 0 already
-    if (fontCascade().computedWordSpacing() == spacing)
-        return;
-
-    m_inheritedData.access().fontData.access().fontCascade.setWordSpacing(WTFMove(spacing));
 }
 
 void RenderStyle::setTextSpacingTrim(TextSpacingTrim value)
@@ -2727,11 +2641,10 @@ void RenderStyle::setFontWeight(FontSelectionValue value)
     setFontDescription(WTFMove(description));
 }
 
-void RenderStyle::setFontWidth(FontSelectionValue value)
+void RenderStyle::setFontWidth(Style::FontWidth value)
 {
     auto description = fontDescription();
-    description.setWidth(value);
-
+    description.setWidth(value.platform());
     setFontDescription(WTFMove(description));
 }
 
@@ -2742,10 +2655,10 @@ void RenderStyle::setFontItalic(std::optional<FontSelectionValue> value)
     setFontDescription(WTFMove(description));
 }
 
-void RenderStyle::setFontPalette(const FontPalette& value)
+void RenderStyle::setFontPalette(Style::FontPalette&& value)
 {
     auto description = fontDescription();
-    description.setFontPalette(value);
+    description.setFontPalette(value.platform());
     setFontDescription(WTFMove(description));
 }
 
@@ -2765,7 +2678,7 @@ const Style::Color& RenderStyle::unresolvedColorForProperty(CSSPropertyID colorP
     case CSSPropertyBorderTopColor:
         return visitedLink ? visitedLinkBorderTopColor() : borderTopColor();
     case CSSPropertyFill:
-        return fill().color;
+        return fill().colorDisregardingType();
     case CSSPropertyFloodColor:
         return floodColor();
     case CSSPropertyLightingColor:
@@ -2775,7 +2688,7 @@ const Style::Color& RenderStyle::unresolvedColorForProperty(CSSPropertyID colorP
     case CSSPropertyStopColor:
         return stopColor();
     case CSSPropertyStroke:
-        return stroke().color;
+        return stroke().colorDisregardingType();
     case CSSPropertyStrokeColor:
         return visitedLink ? visitedLinkStrokeColor() : strokeColor();
     case CSSPropertyBorderBlockEndColor:
@@ -3157,7 +3070,7 @@ static LayoutUnit computeOutset(const OutsetValue& outsetValue, LayoutUnit borde
             return LayoutUnit(number.value * borderWidth);
         },
         [&](const typename OutsetValue::Length& length) {
-            return LayoutUnit(length.value);
+            return LayoutUnit(length.resolveZoom(Style::ZoomNeeded { }));
         }
     );
 }
@@ -3165,20 +3078,20 @@ static LayoutUnit computeOutset(const OutsetValue& outsetValue, LayoutUnit borde
 LayoutBoxExtent RenderStyle::imageOutsets(const Style::BorderImage& image) const
 {
     return {
-        computeOutset(image.outset().values.top(), LayoutUnit(Style::evaluate(borderTopWidth()))),
-        computeOutset(image.outset().values.right(), LayoutUnit(Style::evaluate(borderRightWidth()))),
-        computeOutset(image.outset().values.bottom(), LayoutUnit(Style::evaluate(borderBottomWidth()))),
-        computeOutset(image.outset().values.left(), LayoutUnit(Style::evaluate(borderLeftWidth())))
+        computeOutset(image.outset().values.top(), Style::evaluate<LayoutUnit>(borderTopWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.right(), Style::evaluate<LayoutUnit>(borderRightWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.bottom(), Style::evaluate<LayoutUnit>(borderBottomWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.left(), Style::evaluate<LayoutUnit>(borderLeftWidth(), Style::ZoomNeeded { })),
     };
 }
 
 LayoutBoxExtent RenderStyle::imageOutsets(const Style::MaskBorder& image) const
 {
     return {
-        computeOutset(image.outset().values.top(), LayoutUnit(Style::evaluate(borderTopWidth()))),
-        computeOutset(image.outset().values.right(), LayoutUnit(Style::evaluate(borderRightWidth()))),
-        computeOutset(image.outset().values.bottom(), LayoutUnit(Style::evaluate(borderBottomWidth()))),
-        computeOutset(image.outset().values.left(), LayoutUnit(Style::evaluate(borderLeftWidth())))
+        computeOutset(image.outset().values.top(), Style::evaluate<LayoutUnit>(borderTopWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.right(), Style::evaluate<LayoutUnit>(borderRightWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.bottom(), Style::evaluate<LayoutUnit>(borderBottomWidth(), Style::ZoomNeeded { })),
+        computeOutset(image.outset().values.left(), Style::evaluate<LayoutUnit>(borderLeftWidth(), Style::ZoomNeeded { })),
     };
 }
 
@@ -3457,36 +3370,6 @@ void RenderStyle::setScrollPaddingRight(Style::ScrollPaddingEdge&& edge)
     SET_NESTED_VAR(m_nonInheritedData, rareData, scrollPadding.right(), WTFMove(edge));
 }
 
-ScrollSnapType RenderStyle::initialScrollSnapType()
-{
-    return { };
-}
-
-ScrollSnapAlign RenderStyle::initialScrollSnapAlign()
-{
-    return { };
-}
-
-ScrollSnapStop RenderStyle::initialScrollSnapStop()
-{
-    return ScrollSnapStop::Normal;
-}
-
-ScrollSnapType RenderStyle::scrollSnapType() const
-{
-    return m_nonInheritedData->rareData->scrollSnapType;
-}
-
-const ScrollSnapAlign& RenderStyle::scrollSnapAlign() const
-{
-    return m_nonInheritedData->rareData->scrollSnapAlign;
-}
-
-ScrollSnapStop RenderStyle::scrollSnapStop() const
-{
-    return m_nonInheritedData->rareData->scrollSnapStop;
-}
-
 bool RenderStyle::scrollSnapDataEquivalent(const RenderStyle& other) const
 {
     if (m_nonInheritedData.ptr() == other.m_nonInheritedData.ptr()
@@ -3499,72 +3382,13 @@ bool RenderStyle::scrollSnapDataEquivalent(const RenderStyle& other) const
         && m_nonInheritedData->rareData->scrollSnapAlign == other.m_nonInheritedData->rareData->scrollSnapAlign;
 }
 
-void RenderStyle::setScrollSnapType(ScrollSnapType type)
-{
-    SET_NESTED_VAR(m_nonInheritedData, rareData, scrollSnapType, type);
-}
-
-void RenderStyle::setScrollSnapAlign(const ScrollSnapAlign& alignment)
-{
-    SET_NESTED_VAR(m_nonInheritedData, rareData, scrollSnapAlign, alignment);
-}
-
-void RenderStyle::setScrollSnapStop(ScrollSnapStop stop)
-{
-    SET_NESTED_VAR(m_nonInheritedData, rareData, scrollSnapStop, stop);
-}
-
-bool RenderStyle::hasSnapPosition() const
-{
-    const ScrollSnapAlign& alignment = this->scrollSnapAlign();
-    return alignment.blockAlign != ScrollSnapAxisAlignType::None || alignment.inlineAlign != ScrollSnapAxisAlignType::None;
-}
-
-TextEdge RenderStyle::textBoxEdge() const
-{
-    return m_rareInheritedData->textBoxEdge;
-}
-
-void RenderStyle::setTextBoxEdge(TextEdge value)
-{
-    SET_VAR(m_rareInheritedData, textBoxEdge, value);
-}
-
-TextEdge RenderStyle::initialTextBoxEdge()
-{
-    return { TextEdgeType::Auto, TextEdgeType::Auto };
-}
-
-TextEdge RenderStyle::lineFitEdge() const
-{
-    return m_rareInheritedData->lineFitEdge;
-}
-
-void RenderStyle::setLineFitEdge(TextEdge value)
-{
-    SET_VAR(m_rareInheritedData, lineFitEdge, value);
-}
-
-TextEdge RenderStyle::initialLineFitEdge()
-{
-    return { TextEdgeType::Leading, TextEdgeType::Leading };
-}
-
-bool RenderStyle::hasReferenceFilterOnly() const
-{
-    if (!hasFilter())
-        return false;
-    auto& filterOperations = m_nonInheritedData->miscData->filter->operations;
-    return filterOperations.size() == 1 && filterOperations.at(0)->type() == FilterOperation::Type::Reference;
-}
-
 Style::LineWidth RenderStyle::outlineWidth() const
 {
     auto& outline = m_nonInheritedData->backgroundData->outline;
     if (outline.style() == OutlineStyle::None)
         return 0_css_px;
     if (outlineStyle() == OutlineStyle::Auto)
-        return Style::LineWidth { std::max(Style::evaluate(outline.width()), RenderTheme::platformFocusRingWidth()) };
+        return Style::LineWidth { std::max(Style::evaluate<float>(outline.width(), Style::ZoomNeeded { }), RenderTheme::platformFocusRingWidth()) };
     return outline.width();
 }
 
@@ -3572,13 +3396,13 @@ Style::Length<> RenderStyle::outlineOffset() const
 {
     auto& outline = m_nonInheritedData->backgroundData->outline;
     if (outlineStyle() == OutlineStyle::Auto)
-        return Style::Length<> { static_cast<float>(Style::evaluate(outline.offset()) + RenderTheme::platformFocusRingOffset(Style::evaluate(outline.width()))) };
+        return Style::Length<> { Style::evaluate<float>(outline.offset(), Style::ZoomNeeded { }) + RenderTheme::platformFocusRingOffset(Style::evaluate<float>(outline.width(), Style::ZoomNeeded { })) };
     return outline.offset();
 }
 
 float RenderStyle::outlineSize() const
 {
-    return std::max<float>(0, Style::evaluate(outlineWidth()) + Style::evaluate(outlineOffset()));
+    return std::max(0.0f, Style::evaluate<float>(outlineWidth(), Style::ZoomNeeded { }) + Style::evaluate<float>(outlineOffset(), Style::ZoomNeeded { }));
 }
 
 CheckedRef<const FontCascade> RenderStyle::checkedFontCascade() const
@@ -3624,11 +3448,11 @@ float RenderStyle::computedStrokeWidth(const IntSize& viewportSize) const
     // Since there will be no visible stroke when stroke-color is not specified (transparent by default), we fall
     // back to the legacy Webkit text stroke combination in that case.
     if (!hasExplicitlySetStrokeColor())
-        return Style::evaluate(textStrokeWidth());
+        return Style::evaluate<float>(textStrokeWidth(), Style::ZoomNeeded { });
 
     return WTF::switchOn(strokeWidth(),
         [&](const Style::StrokeWidth::Fixed& fixedStrokeWidth) -> float {
-            return fixedStrokeWidth.value;
+            return Style::evaluate<float>(fixedStrokeWidth, Style::ZoomNeeded { });
         },
         [&](const Style::StrokeWidth::Percentage& percentageStrokeWidth) -> float {
             // According to the spec, https://drafts.fxtf.org/paint/#stroke-width, the percentage is relative to the scaled viewport size.
@@ -3637,7 +3461,7 @@ float RenderStyle::computedStrokeWidth(const IntSize& viewportSize) const
         },
         [&](const Style::StrokeWidth::Calc& calcStrokeWidth) -> float {
             // FIXME: It is almost certainly wrong that calc and percentage are being handled differently - https://bugs.webkit.org/show_bug.cgi?id=296482
-            return Style::evaluate(calcStrokeWidth, viewportSize.width());
+            return Style::evaluate<float>(calcStrokeWidth, viewportSize.width());
         }
     );
 }
@@ -3723,7 +3547,7 @@ std::optional<size_t> RenderStyle::lastSuccessfulPositionTryFallbackIndex() cons
     return m_nonInheritedData->rareData->lastSuccessfulPositionTryFallbackIndex;
 }
 
-void RenderStyle::setLastSuccessfulPositionTryFallbackIndex(std::optional<size_t>&& index)
+void RenderStyle::setLastSuccessfulPositionTryFallbackIndex(std::optional<size_t> index)
 {
     SET_NESTED_VAR(m_nonInheritedData, rareData, lastSuccessfulPositionTryFallbackIndex, WTFMove(index));
 }
@@ -3788,7 +3612,7 @@ void RenderStyle::NonInheritedFlags::dumpDifferences(TextStream& ts, const NonIn
     LOG_IF_DIFFERENT(usesContainerUnits);
     LOG_IF_DIFFERENT(useTreeCountingFunctions);
 
-    LOG_IF_DIFFERENT_WITH_CAST(TextDecorationLine, textDecorationLine);
+    LOG_IF_DIFFERENT_WITH_CAST(Style::TextDecorationLine, textDecorationLine);
 
     LOG_IF_DIFFERENT(hasExplicitlyInheritedProperties);
     LOG_IF_DIFFERENT(disallowsFastPathInheritance);
@@ -3815,7 +3639,7 @@ void RenderStyle::InheritedFlags::dumpDifferences(TextStream& ts, const Inherite
     LOG_IF_DIFFERENT_WITH_CAST(TextWrapStyle, textWrapStyle);
 
     LOG_RAW_OPTIONSET_IF_DIFFERENT(TextTransform, textTransform);
-    LOG_RAW_OPTIONSET_IF_DIFFERENT(TextDecorationLine, textDecorationLineInEffect);
+    LOG_IF_DIFFERENT_WITH_CAST(Style::TextDecorationLine, textDecorationLineInEffect);
 
     LOG_IF_DIFFERENT_WITH_CAST(PointerEvents, pointerEvents);
     LOG_IF_DIFFERENT_WITH_CAST(Visibility, visibility);

@@ -23,13 +23,13 @@
 
 #include "CommonVM.h"
 #include "DOMWrapperWorld.h"
+#include "FrameConsoleClient.h"
 #include "FrameInlines.h"
 #include "GarbageCollectionController.h"
 #include "JSDOMWindowBase.h"
 #include "JSWindowProxy.h"
 #include "LocalFrame.h"
 #include "Page.h"
-#include "PageConsoleClient.h"
 #include "PageGroup.h"
 #include "RemoteFrame.h"
 #include "ScriptController.h"
@@ -189,21 +189,21 @@ void WindowProxy::setDOMWindow(DOMWindow* newDOMWindow)
 
         windowProxy->setWindow(*newDOMWindow);
 
-        ScriptController* scriptController = nullptr;
-        RefPtr page = m_frame->page();
-        if (auto* localFrame = dynamicDowncast<LocalFrame>(*m_frame))
-            scriptController = &localFrame->script();
+        if (RefPtr localFrame = dynamicDowncast<LocalFrame>(m_frame.get())) {
+            CheckedRef scriptController = localFrame->script();
 
-        // ScriptController's m_cacheableBindingRootObject persists between page navigations
-        // so needs to know about the new JSDOMWindow.
-        if (RefPtr cacheableBindingRootObject = scriptController ? scriptController->existingCacheableBindingRootObject() : nullptr)
-            cacheableBindingRootObject->updateGlobalObject(windowProxy->window());
+            // ScriptController's m_cacheableBindingRootObject persists between page navigations
+            // so needs to know about the new JSDOMWindow.
+            if (RefPtr cacheableBindingRootObject = scriptController->existingCacheableBindingRootObject())
+                cacheableBindingRootObject->updateGlobalObject(windowProxy->window());
 
-        windowProxy->attachDebugger(page ? page->debugger() : nullptr);
-        if (page) {
-            windowProxy->window()->setProfileGroup(page->group().identifier());
-            windowProxy->window()->setConsoleClient(page->console());
+            windowProxy->window()->setConsoleClient(localFrame->console());
         }
+
+        RefPtr page = m_frame->page();
+        windowProxy->attachDebugger(page ? page->debugger() : nullptr);
+        if (page)
+            windowProxy->window()->setProfileGroup(page->group().identifier());
     }
 }
 

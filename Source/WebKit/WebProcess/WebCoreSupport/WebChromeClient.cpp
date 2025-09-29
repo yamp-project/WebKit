@@ -42,6 +42,7 @@
 #include "ImageBufferShareableBitmapBackend.h"
 #include "InjectedBundleNodeHandle.h"
 #include "MessageSenderInlines.h"
+#include "ModelDowncastConvertToBackingContext.h"
 #include "NavigationActionData.h"
 #include "NetworkConnectionToWebProcessMessages.h"
 #include "NetworkProcessConnection.h"
@@ -78,6 +79,7 @@
 #include <WebCore/AXObjectCache.h>
 #include <WebCore/BarcodeDetectorInterface.h>
 #include <WebCore/ColorChooser.h>
+#include <WebCore/ColorChooserClient.h>
 #include <WebCore/ContentRuleListMatchedRule.h>
 #include <WebCore/ContentRuleListResults.h>
 #include <WebCore/CookieConsentDecisionResult.h>
@@ -94,7 +96,7 @@
 #include <WebCore/HTMLInputElement.h>
 #include <WebCore/HTMLNames.h>
 #include <WebCore/HTMLParserIdioms.h>
-#include <WebCore/HTMLPlugInImageElement.h>
+#include <WebCore/HTMLPlugInElement.h>
 #include <WebCore/Icon.h>
 #include <WebCore/ImageBuffer.h>
 #include <WebCore/LocalFrame.h>
@@ -383,6 +385,7 @@ RefPtr<Page> WebChromeClient::createWindow(LocalFrame& frame, const String& open
         WebCore::LockBackForwardList::No,
         { }, /* clientRedirectSourceForHistory */
         frame.effectiveSandboxFlags(),
+        frame.document()->referrerPolicy(),
         std::nullopt, /* ownerPermissionsPolicy */
         navigationAction.privateClickMeasurement(),
         { }, /* advancedPrivacyProtections */
@@ -449,31 +452,12 @@ void WebChromeClient::reportProcessCPUTime(Seconds cpuTime, ActivityStateForCPUS
     WebProcess::singleton().send(Messages::WebProcessPool::ReportWebContentCPUTime(cpuTime, static_cast<uint64_t>(activityState)), 0);
 }
 
-void WebChromeClient::setToolbarsVisible(bool toolbarsAreVisible)
-{
-    if (RefPtr page = m_page.get())
-        page->send(Messages::WebPageProxy::SetToolbarsAreVisible(toolbarsAreVisible));
-}
-
 bool WebChromeClient::toolbarsVisible() const
 {
     RefPtr page = m_page.get();
     if (!page)
         return false;
-
-    API::InjectedBundle::PageUIClient::UIElementVisibility toolbarsVisibility = page->injectedBundleUIClient().toolbarsAreVisible(page.get());
-    if (toolbarsVisibility != API::InjectedBundle::PageUIClient::UIElementVisibility::Unknown)
-        return toolbarsVisibility == API::InjectedBundle::PageUIClient::UIElementVisibility::Visible;
-    
-    auto sendResult = WebProcess::singleton().parentProcessConnection()->sendSync(Messages::WebPageProxy::GetToolbarsAreVisible(), page->identifier());
-    auto [toolbarsAreVisible] = sendResult.takeReplyOr(true);
-    return toolbarsAreVisible;
-}
-
-void WebChromeClient::setStatusbarVisible(bool statusBarIsVisible)
-{
-    if (RefPtr page = m_page.get())
-        page->send(Messages::WebPageProxy::SetStatusBarIsVisible(statusBarIsVisible));
+    return page->toolbarsAreVisible();
 }
 
 bool WebChromeClient::statusbarVisible() const
@@ -481,19 +465,7 @@ bool WebChromeClient::statusbarVisible() const
     RefPtr page = m_page.get();
     if (!page)
         return false;
-
-    API::InjectedBundle::PageUIClient::UIElementVisibility statusbarVisibility = page->injectedBundleUIClient().statusBarIsVisible(page.get());
-    if (statusbarVisibility != API::InjectedBundle::PageUIClient::UIElementVisibility::Unknown)
-        return statusbarVisibility == API::InjectedBundle::PageUIClient::UIElementVisibility::Visible;
-
-    auto sendResult = WebProcess::singleton().parentProcessConnection()->sendSync(Messages::WebPageProxy::GetStatusBarIsVisible(), page->identifier());
-    auto [statusBarIsVisible] = sendResult.takeReplyOr(true);
-    return statusBarIsVisible;
-}
-
-void WebChromeClient::setScrollbarsVisible(bool)
-{
-    notImplemented();
+    return page->statusBarIsVisible();
 }
 
 bool WebChromeClient::scrollbarsVisible() const
@@ -502,25 +474,12 @@ bool WebChromeClient::scrollbarsVisible() const
     return true;
 }
 
-void WebChromeClient::setMenubarVisible(bool menuBarVisible)
-{
-    if (RefPtr page = m_page.get())
-        page->send(Messages::WebPageProxy::SetMenuBarIsVisible(menuBarVisible));
-}
-
 bool WebChromeClient::menubarVisible() const
 {
     RefPtr page = m_page.get();
     if (!page)
         return false;
-
-    API::InjectedBundle::PageUIClient::UIElementVisibility menubarVisibility = page->injectedBundleUIClient().menuBarIsVisible(page.get());
-    if (menubarVisibility != API::InjectedBundle::PageUIClient::UIElementVisibility::Unknown)
-        return menubarVisibility == API::InjectedBundle::PageUIClient::UIElementVisibility::Visible;
-    
-    auto sendResult = WebProcess::singleton().parentProcessConnection()->sendSync(Messages::WebPageProxy::GetMenuBarIsVisible(), page->identifier());
-    auto [menuBarIsVisible] = sendResult.takeReplyOr(true);
-    return menuBarIsVisible;
+    return page->menuBarIsVisible();
 }
 
 void WebChromeClient::setResizable(bool resizable)
@@ -531,23 +490,17 @@ void WebChromeClient::setResizable(bool resizable)
 
 void WebChromeClient::addMessageToConsole(MessageSource source, MessageLevel level, const String& message, unsigned lineNumber, unsigned columnNumber, const String& sourceID)
 {
-    // Notify the bundle client.
     RefPtr page = m_page.get();
     if (!page)
         return;
 
-    // FIXME: Remove this after rdar://143399667 is fixed.
+#if !PLATFORM(COCOA)
     page->injectedBundleUIClient().willAddMessageToConsole(page.get(), source, level, message, lineNumber, columnNumber, sourceID);
+#endif
 
     if (!page->shouldSendConsoleLogsToUIProcessForTesting())
         return;
     page->send(Messages::WebPageProxy::AddMessageToConsoleForTesting(message.length() > String::MaxLength / 2 ? "Out of memory"_s : message), IPC::SendOption::DispatchMessageEvenWhenWaitingForSyncReply);
-}
-
-void WebChromeClient::addMessageWithArgumentsToConsole(MessageSource source, MessageLevel level, const String& message, std::span<const String> messageArguments, unsigned lineNumber, unsigned columnNumber, const String& sourceID)
-{
-    if (RefPtr page = m_page.get())
-        page->injectedBundleUIClient().willAddMessageWithArgumentsToConsole(page.get(), source, level, message, messageArguments, lineNumber, columnNumber, sourceID);
 }
 
 bool WebChromeClient::canRunBeforeUnloadConfirmPanel()
@@ -634,7 +587,6 @@ void WebChromeClient::runJavaScriptAlert(LocalFrame& frame, const String& alertT
     if (!page)
         return;
 
-    page->injectedBundleUIClient().willRunJavaScriptAlert(page.get(), alertText, webFrame.get());
     page->prepareToRunModalJavaScriptDialog();
 
     HangDetectionDisabler hangDetectionDisabler;
@@ -658,7 +610,6 @@ bool WebChromeClient::runJavaScriptConfirm(LocalFrame& frame, const String& mess
     if (!page)
         return false;
 
-    page->injectedBundleUIClient().willRunJavaScriptConfirm(page.get(), message, webFrame.get());
     page->prepareToRunModalJavaScriptDialog();
 
     HangDetectionDisabler hangDetectionDisabler;
@@ -684,7 +635,6 @@ bool WebChromeClient::runJavaScriptPrompt(LocalFrame& frame, const String& messa
     if (!page)
         return false;
 
-    page->injectedBundleUIClient().willRunJavaScriptPrompt(page.get(), message, defaultValue, webFrame.get());
     page->prepareToRunModalJavaScriptDialog();
 
     HangDetectionDisabler hangDetectionDisabler;
@@ -934,20 +884,16 @@ void WebChromeClient::unavailablePluginButtonClicked(Element& element, PluginUna
 
 void WebChromeClient::mouseDidMoveOverElement(const HitTestResult& hitTestResult, OptionSet<WebCore::PlatformEventModifier> modifiers, const String& toolTip, TextDirection)
 {
-    RefPtr<API::Object> userData;
     auto wkModifiers = modifiersFromPlatformEventModifiers(modifiers);
 
-    // Notify the bundle client.
     RefPtr page = m_page.get();
     if (!page)
         return;
 
-    page->injectedBundleUIClient().mouseDidMoveOverElement(page.get(), hitTestResult, wkModifiers, userData);
-
     // Notify the UIProcess.
     WebHitTestResultData webHitTestResultData(hitTestResult, toolTip);
     webHitTestResultData.elementBoundingBox = webHitTestResultData.elementBoundingBox.toRectWithExtentsClippedToNumericLimits();
-    page->send(Messages::WebPageProxy::MouseDidMoveOverElement(webHitTestResultData, wkModifiers, UserData(WebProcess::singleton().transformObjectsToHandles(userData.get()).get())));
+    page->send(Messages::WebPageProxy::MouseDidMoveOverElement(webHitTestResultData, wkModifiers));
 }
 
 void WebChromeClient::print(LocalFrame& frame, const StringWithDirection& title)
@@ -1134,7 +1080,7 @@ RefPtr<ImageBuffer> WebChromeClient::createImageBuffer(const FloatSize& size, Re
     }
 
     if (purpose == RenderingPurpose::ShareableSnapshot || purpose == RenderingPurpose::ShareableLocalSnapshot)
-        return ImageBuffer::create<ImageBufferShareableBitmapBackend>(size, resolutionScale, colorSpace, { ImageBufferPixelFormat::BGRA8 }, purpose, { });
+        return ImageBuffer::create<ImageBufferShareableBitmapBackend>(size, resolutionScale, colorSpace, { PixelFormat::BGRA8 }, purpose, { });
 
     return nullptr;
 }
@@ -1186,7 +1132,7 @@ RefPtr<WebCore::WebGPU::GPU> WebChromeClient::createGPUForWebGPU() const
     RefPtr page = m_page.get();
     if (!page)
         return nullptr;
-    return RemoteGPUProxy::create(WebGPU::DowncastConvertToBackingContext::create(), page.releaseNonNull());
+    return RemoteGPUProxy::create(WebGPU::DowncastConvertToBackingContext::create(), DDModel::DowncastConvertToBackingContext::create(), page.releaseNonNull());
 #else
     return WebCore::WebGPU::create([](WebCore::WebGPU::WorkItem&& workItem) {
         callOnMainRunLoop(WTFMove(workItem));
@@ -1934,15 +1880,7 @@ void WebChromeClient::inputElementDidResignStrongPasswordAppearance(HTMLInputEle
     RefPtr page = m_page.get();
     if (!page)
         return;
-
-    RefPtr<API::Object> userData;
-
-    // Notify the bundle client.
-    auto nodeHandle = InjectedBundleNodeHandle::getOrCreate(inputElement);
-    page->injectedBundleUIClient().didResignInputElementStrongPasswordAppearance(*page, nodeHandle.get(), userData);
-
-    // Notify the UIProcess.
-    page->send(Messages::WebPageProxy::DidResignInputElementStrongPasswordAppearance { UserData { WebProcess::singleton().transformObjectsToHandles(userData.get()).get() } });
+    page->send(Messages::WebPageProxy::DidResignInputElementStrongPasswordAppearance { UserData { } });
 }
 
 void WebChromeClient::performSwitchHapticFeedback()

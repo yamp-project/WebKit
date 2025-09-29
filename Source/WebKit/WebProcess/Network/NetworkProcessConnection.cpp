@@ -88,8 +88,10 @@ NetworkProcessConnection::NetworkProcessConnection(IPC::Connection::Identifier&&
 {
     m_connection->open(*this);
 
+#if USE(LIBWEBRTC)
     if (WebRTCProvider::webRTCAvailable())
         WebProcess::singleton().protectedLibWebRTCNetwork()->setConnection(m_connection.copyRef());
+#endif
 }
 
 NetworkProcessConnection::~NetworkProcessConnection()
@@ -192,8 +194,10 @@ bool NetworkProcessConnection::dispatchSyncMessage(IPC::Connection& connection, 
 {
 #if ENABLE(APPLE_PAY_REMOTE_UI)
     if (decoder.messageReceiverName() == Messages::WebPaymentCoordinator::messageReceiverName()) {
-        if (auto webPage = WebProcess::singleton().webPage(ObjectIdentifier<PageIdentifierType>(decoder.destinationID())))
-            return webPage->paymentCoordinator()->didReceiveSyncMessage(connection, decoder, replyEncoder);
+        if (auto webPage = WebProcess::singleton().webPage(ObjectIdentifier<PageIdentifierType>(decoder.destinationID()))) {
+            webPage->paymentCoordinator()->didReceiveSyncMessage(connection, decoder, replyEncoder);
+            return true;
+        }
         return false;
     }
 #endif

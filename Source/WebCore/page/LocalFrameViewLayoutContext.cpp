@@ -110,9 +110,9 @@ private:
 };
 #endif
 
-class LayoutScope {
+class LayoutFrameScope {
 public:
-    LayoutScope(LocalFrameViewLayoutContext& layoutContext)
+    LayoutFrameScope(LocalFrameViewLayoutContext& layoutContext)
         : m_view(layoutContext.view())
         , m_nestedState(layoutContext.m_layoutNestedState, layoutContext.m_layoutNestedState == LocalFrameViewLayoutContext::LayoutNestedState::NotInLayout ? LocalFrameViewLayoutContext::LayoutNestedState::NotNested : LocalFrameViewLayoutContext::LayoutNestedState::Nested)
         , m_schedulingIsEnabled(layoutContext.m_layoutSchedulingIsEnabled, false)
@@ -121,7 +121,7 @@ public:
         m_view->setCurrentScrollType(ScrollType::Programmatic);
     }
         
-    ~LayoutScope()
+    ~LayoutFrameScope()
     {
         m_view->setCurrentScrollType(m_previousScrollType);
     }
@@ -201,7 +201,7 @@ void LocalFrameViewLayoutContext::performLayout(bool canDeferUpdateLayerPosition
         return;
     }
 
-    LayoutScope layoutScope(*this);
+    LayoutFrameScope layoutFrameScope(*this);
     TraceScope tracingScope(PerformLayoutStart, PerformLayoutEnd);
     ScriptDisallowedScope::InMainThread scriptDisallowedScope;
     InspectorInstrumentation::willLayout(frame);
@@ -825,15 +825,21 @@ const AnchorScrollAdjuster* LocalFrameViewLayoutContext::anchorScrollAdjusterFor
     return &m_anchorScrollAdjusters[index];
 }
 
-void LocalFrameViewLayoutContext::registerAnchorScrollAdjuster(AnchorScrollAdjuster&& scrollAdjuster)
+AnchorScrollAdjuster::Diff LocalFrameViewLayoutContext::registerAnchorScrollAdjuster(AnchorScrollAdjuster&& scrollAdjuster)
 {
     auto index = m_anchorScrollAdjusters.findIf([&](auto& item) {
         return item.anchored() == scrollAdjuster.anchored();
     });
-    if (WTF::notFound == index)
+
+    bool recaptureDiffers = false;
+    if (WTF::notFound == index) {
         m_anchorScrollAdjusters.append(WTFMove(scrollAdjuster));
-    else
-        m_anchorScrollAdjusters[index] = WTFMove(scrollAdjuster);
+        return AnchorScrollAdjuster::New;
+    }
+
+    recaptureDiffers = m_anchorScrollAdjusters[index].recaptureDiffers(scrollAdjuster);
+    m_anchorScrollAdjusters[index] = WTFMove(scrollAdjuster);
+    return recaptureDiffers ? AnchorScrollAdjuster::SnapshotsDiffer : AnchorScrollAdjuster::SnapshotsMatch;
 }
 
 void LocalFrameViewLayoutContext::unregisterAnchorScrollAdjusterFor(const RenderBox& anchored)

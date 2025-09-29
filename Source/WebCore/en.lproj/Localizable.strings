@@ -65,7 +65,7 @@
 "%@ Web Content (Prewarmed)" = "%@ Web Content (Prewarmed)";
 
 /* Extension's process name that appears in Activity Monitor where the parameter is the name of the extension */
-"%@ Web Extension" = "%@ Web Extension";
+"%s Web Extension" = "%s Web Extension";
 
 /* Visible name of Web Inspector's web process. The argument is the application name. */
 "%@ Web Inspector" = "%@ Web Inspector";
@@ -588,6 +588,9 @@
 
 /* WKWebExtensionErrorInvalidDeclarativeNetRequestEntry description for too many enabled static rulesets */
 "Exceeded maximum number of enabled `declarative_net_request` static rulesets. The first %lu will be applied, the remaining will be ignored." = "Exceeded maximum number of enabled `declarative_net_request` static rulesets. The first %lu will be applied, the remaining will be ignored.";
+
+/* WKWebExtensionErrorInvalidDeclarativeNetRequestEntry description for a duplicated rule id */
+"`declarative_net_request` ruleset with id `%@` duplicates the rule id `%@`." = "`declarative_net_request` ruleset with id `%@` duplicates the rule id `%@`.";
 
 /* Button for exiting full screen when in full screen media playback */
 "Exit Full Screen" = "Exit Full Screen";
@@ -1357,8 +1360,8 @@
 /* Show fonts context menu item */
 "Show Fonts" = "Show Fonts";
 
-/* Media stats context menu item */
-"Show Media Stats" = "Show Media Stats";
+/* Media statistics context menu item */
+"Show Media Statistics" = "Show Media Statistics";
 
 /* menu item title */
 "Show Spelling and Grammar" = "Show Spelling and Grammar";
@@ -1389,6 +1392,9 @@
 
 /* Smart Quotes context menu item */
 "Smart Quotes" = "Smart Quotes";
+
+/* Smart Lists context menu item */
+"Smart Lists" = "Smart Lists";
 
 /* Speech context sub-menu item */
 "Speech" = "Speech";

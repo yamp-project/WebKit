@@ -460,6 +460,9 @@ public:
     bool isAutomaticTextReplacementEnabled();
     void setAutomaticTextReplacementEnabled(bool);
     void toggleAutomaticTextReplacement();
+    bool isSmartListsEnabled();
+    void setSmartListsEnabled(bool);
+    void toggleSmartLists();
     void uppercaseWord();
     void lowercaseWord();
     void capitalizeWord();
@@ -624,7 +627,7 @@ public:
     CGFloat totalHeightOfBanners() const { return m_totalHeightOfBanners; }
 
     void doneWithKeyEvent(NSEvent *, bool eventWasHandled);
-    NSArray *validAttributesForMarkedText();
+    NSArray *validAttributesForMarkedTextSingleton();
     void doCommandBySelector(SEL);
     void insertText(id string);
     void insertText(id string, NSRange replacementRange);
@@ -805,6 +808,7 @@ public:
     void updateTopScrollPocketCaptureColor();
     void updateTopScrollPocketStyle();
     void updatePrefersSolidColorHardPocket();
+    void setCanInstallScrollPocket();
 #endif
 
 private:
@@ -1089,6 +1093,7 @@ ALLOW_DEPRECATED_DECLARATIONS_END
 #if ENABLE(CONTENT_INSET_BACKGROUND_FILL)
     RetainPtr<NSScrollPocket> m_topScrollPocket;
     RetainPtr<NSHashTable<NSView *>> m_viewsAboveScrollPocket;
+    bool m_canInstallScrollPocket { false };
 #endif
 
 #if HAVE(INLINE_PREDICTIONS)

@@ -33,6 +33,7 @@
 #import "CommandEncoder.h"
 #import "ComputePassEncoder.h"
 #import "ComputePipeline.h"
+#import "DDMesh.h"
 #import "Device.h"
 #import "ExternalTexture.h"
 #import "Instance.h"
@@ -170,7 +171,7 @@ inline PresentationContext& fromAPI(WGPUSwapChain swapChain)
     return static_cast<PresentationContext&>(*swapChain);
 }
 
-inline Texture& fromAPI(WGPUTexture texture) SWIFT_RETURNS_UNRETAINED
+inline Texture& fromAPI(WGPUTexture texture)
 {
     return static_cast<Texture&>(*texture);
 }
@@ -203,6 +204,16 @@ inline XRView& fromAPI(WGPUXRView view)
 inline String fromAPI(const char* string)
 {
     return String::fromUTF8(string);
+}
+
+inline DDMesh& fromAPI(WGPUDDMesh mesh)
+{
+    return static_cast<DDMesh&>(*mesh);
+}
+
+inline Ref<DDMesh> protectedFromAPI(WGPUDDMesh mesh)
+{
+    return static_cast<DDMesh&>(*mesh);
 }
 
 inline Ref<Adapter> protectedFromAPI(WGPUAdapter adapter)

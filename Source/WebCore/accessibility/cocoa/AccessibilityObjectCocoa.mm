@@ -25,11 +25,11 @@
  */
 
 #import "config.h"
-#import "AccessibilityObject.h"
+#import "AccessibilityObjectInlines.h"
 
 #if PLATFORM(COCOA)
 
-#import "AXObjectCache.h"
+#import "AXObjectCacheInlines.h"
 #import "TextIterator.h"
 #import "WebAccessibilityObjectWrapperBase.h"
 #import <wtf/cocoa/TypeCastsCocoa.h>
@@ -147,7 +147,7 @@ RetainPtr<NSArray> AccessibilityObject::contentForRange(const SimpleRange& range
         } else {
             if (RefPtr replacedNode = it.node()) {
                 auto* cache = axObjectCache();
-                if (RefPtr object = cache ? cache->getOrCreate(replacedNode->renderer()) : nullptr)
+                if (RefPtr object = cache ? cache->getOrCreate(*replacedNode) : nullptr)
                     addObjectWrapperToArray(*object, result.get());
             }
         }
@@ -189,7 +189,7 @@ RetainPtr<NSAttributedString> AccessibilityObject::attributedStringForRange(cons
 
 RetainPtr<CTFontRef> fontFrom(const RenderStyle& style)
 {
-    return style.fontCascade().primaryFont()->getCTFont();
+    return style.fontCascade().primaryFont()->ctFont();
 }
 
 Color textColorFrom(const RenderStyle& style)

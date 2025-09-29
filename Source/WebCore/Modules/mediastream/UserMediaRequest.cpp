@@ -37,6 +37,7 @@
 #if ENABLE(MEDIA_STREAM)
 
 #include "AudioSession.h"
+#include "ContextDestructionObserverInlines.h"
 #include "DocumentInlines.h"
 #include "ExceptionCode.h"
 #include "JSDOMPromiseDeferred.h"
@@ -143,9 +144,6 @@ void UserMediaRequest::start()
         break;
     }
 
-    ASSERT(document.page());
-    if (RefPtr page = document.page())
-        page->mediaSessionManager().prepareToSendUserMediaPermissionRequestForPage(*page);
     controller->requestUserMediaAccess(*this);
 }
 

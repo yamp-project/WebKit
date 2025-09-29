@@ -29,6 +29,7 @@
 #include <WebCore/StylePrimitiveNumericConcepts.h>
 #include <WebCore/StyleUnevaluatedCalculation.h>
 #include <WebCore/StyleValueTypes.h>
+#include <WebCore/StyleZoomNeededToken.h>
 #include <algorithm>
 #include <wtf/CompactVariant.h>
 #include <wtf/Forward.h>
@@ -70,7 +71,9 @@ template<CSS::Numeric CSSType> struct PrimitiveNumeric {
 
     constexpr bool isZero() const { return !value; }
     constexpr bool isPositive() const { return value > 0; }
+    constexpr bool isPositiveOrZero() const { return value >= 0; }
     constexpr bool isNegative() const { return value < 0; }
+    constexpr bool isNegativeOrZero() const { return value <= 0; }
 
     constexpr bool operator==(const PrimitiveNumeric&) const = default;
     constexpr bool operator==(ResolvedValueType other) const { return value == other; }
@@ -106,6 +109,85 @@ private:
         else
             return value == emptyValue();
     }
+};
+
+// Specialization of `PrimitiveNumeric` for `CSS::Length` types.
+template<CSS::Range R, typename V> struct PrimitiveNumeric<CSS::Length<R, V>> {
+    using CSS = CSS::Length<R, V>;
+    using Raw = typename CSS::Raw;
+    using UnitType = typename CSS::UnitType;
+    using UnitTraits = typename CSS::UnitTraits;
+    using ResolvedValueType = typename CSS::ResolvedValueType;
+    static constexpr auto range = CSS::range;
+    static constexpr auto category = CSS::category;
+
+    static constexpr auto unit = UnitTraits::canonical;
+
+    constexpr PrimitiveNumeric(ResolvedValueType value)
+        : value { value }
+    {
+    }
+
+    constexpr PrimitiveNumeric(WebCore::CSS::ValueLiteral<UnitTraits::canonical> value)
+        : value { clampTo<ResolvedValueType>(value.value) }
+    {
+    }
+
+    constexpr auto resolveZoom(ZoomNeeded) const
+        requires (range.zoomOptions == WebCore::CSS::RangeZoomOptions::Default)
+    {
+        return value;
+    }
+
+    constexpr auto resolveZoom(float zoom) const
+        requires (range.zoomOptions == WebCore::CSS::RangeZoomOptions::Unzoomed)
+    {
+        return value * zoom;
+    }
+
+    constexpr auto unresolvedValue() const { return value; }
+
+    constexpr bool isZero() const { return !value; }
+    constexpr bool isPositive() const { return value > 0; }
+    constexpr bool isPositiveOrZero() const { return value >= 0; }
+    constexpr bool isNegative() const { return value < 0; }
+    constexpr bool isNegativeOrZero() const { return value <= 0; }
+
+    constexpr bool operator==(const PrimitiveNumeric&) const = default;
+
+    constexpr auto operator<=>(const PrimitiveNumeric&) const = default;
+
+private:
+    template<typename> friend struct PrimitiveNumericMarkableTraits;
+
+    // Markable is supported for numeric values that have free bits. These currently include:
+    //  - any floating point value (using NaN).
+    //  - any numeric value where the minimum allowed value is greater than 0 (using 0).
+    //  - any numeric value where the minimum allowed value is equal to 0 and the minimum representable value is not zero (using -1).
+    static consteval ResolvedValueType emptyValue()
+    {
+        if constexpr (std::floating_point<ResolvedValueType>)
+            return std::numeric_limits<ResolvedValueType>::quiet_NaN();
+        else if constexpr (range.min > 0)
+            return 0;
+        else if constexpr (range.min == 0 && std::numeric_limits<ResolvedValueType>::min() != 0)
+            return -1;
+    }
+
+    PrimitiveNumeric(PrimitiveNumericEmptyToken)
+        : value { emptyValue() }
+    {
+    }
+
+    bool isEmpty() const
+    {
+        if constexpr (std::floating_point<ResolvedValueType>)
+            return std::isnan(value);
+        else
+            return value == emptyValue();
+    }
+
+    ResolvedValueType value { 0 };
 };
 
 // Specialization of `PrimitiveNumeric` for composite dimension-percentage types.

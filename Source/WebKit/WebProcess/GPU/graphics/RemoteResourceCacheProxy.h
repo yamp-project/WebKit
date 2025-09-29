@@ -27,8 +27,9 @@
 
 #if ENABLE(GPU_PROCESS)
 
+#include "RemoteDisplayListIdentifier.h"
+#include "RemoteGradientIdentifier.h"
 #include "RenderingUpdateID.h"
-#include <WebCore/DecomposedGlyphs.h>
 #include <WebCore/FilterFunction.h>
 #include <WebCore/Gradient.h>
 #include <WebCore/NativeImage.h>
@@ -40,6 +41,9 @@ class Filter;
 class Font;
 class ImageBuffer;
 struct FontCustomPlatformData;
+namespace DisplayList {
+class DisplayList;
+}
 }
 
 namespace WebKit {
@@ -55,13 +59,13 @@ public:
 
     void recordNativeImageUse(WebCore::NativeImage&, const WebCore::DestinationColorSpace&);
     void recordFontUse(WebCore::Font&);
-    void recordDecomposedGlyphsUse(WebCore::DecomposedGlyphs&);
-    void recordGradientUse(WebCore::Gradient&);
+    RemoteGradientIdentifier recordGradientUse(WebCore::Gradient&);
     void recordFilterUse(WebCore::Filter&);
     void recordFontCustomPlatformDataUse(const WebCore::FontCustomPlatformData&);
-
+    RemoteDisplayListIdentifier recordDisplayListUse(const WebCore::DisplayList::DisplayList&);
     void didPaintLayers();
 
+    void disconnect();
     void releaseMemory();
     void releaseNativeImages();
     
@@ -69,21 +73,24 @@ public:
 
 private:
     // WebCore::RenderingResourceObserver.
-    void willDestroyNativeImage(WebCore::RenderingResourceIdentifier) override;
-    void willDestroyGradient(WebCore::RenderingResourceIdentifier) override;
-    void willDestroyDecomposedGlyphs(WebCore::RenderingResourceIdentifier) override;
+    void willDestroyNativeImage(const WebCore::NativeImage&) override;
+    void willDestroyGradient(const WebCore::Gradient&) override;
     void willDestroyFilter(WebCore::RenderingResourceIdentifier) override;
+    void willDestroyDisplayList(const WebCore::DisplayList::DisplayList&) override;
 
     void finalizeRenderingUpdateForFonts();
     void prepareForNextRenderingUpdate();
     void releaseFonts();
     void releaseFontCustomPlatformDatas();
 
-    HashSet<WebCore::RenderingResourceIdentifier> m_nativeImages;
-    HashSet<WebCore::RenderingResourceIdentifier> m_gradients;
-    HashSet<WebCore::RenderingResourceIdentifier> m_decomposedGlyphs;
+    struct NativeImageEntry {
+        RefPtr<WebCore::ShareableBitmap> bitmap; // Reused across GPUP crashes, held through the associated NativeImage lifetime.
+        bool existsInRemote = true;
+    };
+    HashMap<const WebCore::NativeImage*, NativeImageEntry> m_nativeImages;
+    HashMap<const WebCore::Gradient*, RemoteGradientIdentifier> m_gradients;
     HashSet<WebCore::RenderingResourceIdentifier> m_filters;
-
+    HashMap<const WebCore::DisplayList::DisplayList*, RemoteDisplayListIdentifier> m_displayLists;
     WeakPtrFactory<WebCore::RenderingResourceObserver> m_resourceObserverWeakFactory;
     WeakPtrFactory<WebCore::RenderingResourceObserver> m_nativeImageResourceObserverWeakFactory;
 

@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <WebCore/DoublePoint.h>
 #include <WebCore/EventTarget.h>
 #include <WebCore/MouseEventTypes.h>
 #include <WebCore/PointerID.h>
@@ -34,6 +35,7 @@
 namespace WebCore {
 
 class Document;
+class DoublePoint;
 class Element;
 class EventTarget;
 class IntPoint;

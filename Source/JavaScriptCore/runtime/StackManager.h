@@ -35,6 +35,8 @@
 
 namespace JSC {
 
+class VM;
+
 class StackManager {
 public:
     class Mirror : public BasicRawSentinelNode<Mirror> {
@@ -59,8 +61,8 @@ public:
     void unregisterMirror(Mirror&);
 
     bool hasStopRequest() { return trapAwareSoftStackLimit() == stopRequestMarker(); }
-    void requestStop();
-    void cancelStop();
+    CONCURRENT_SAFE void requestStop();
+    CONCURRENT_SAFE void cancelStop();
 
     void* softStackLimit() const { return m_softStackLimit; }
     void* trapAwareSoftStackLimit() const { return m_trapAwareSoftStackLimit.loadRelaxed(); }
@@ -90,8 +92,10 @@ public:
 
     VM& vm();
 
+    static constexpr uintptr_t StopRequestMarkerValue = std::numeric_limits<uintptr_t>::max();
+
 private:
-    static ALWAYS_INLINE void* stopRequestMarker() { return reinterpret_cast<void*>(std::numeric_limits<uintptr_t>::max()); }
+    static ALWAYS_INLINE void* stopRequestMarker() { return reinterpret_cast<void*>(StopRequestMarkerValue); }
 
     Atomic<void*> m_trapAwareSoftStackLimit { nullptr };
     void* m_softStackLimit { nullptr };

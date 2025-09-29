@@ -57,6 +57,7 @@
 #import "LocalizedStrings.h"
 #import "NodeName.h"
 #import "RenderImage.h"
+#import "RenderObjectStyle.h"
 #import "RenderText.h"
 #import "StyleExtractor.h"
 #import "StyleProperties.h"
@@ -343,17 +344,17 @@ static void updateAttributes(const Node* node, const RenderStyle& style, OptionS
     UNUSED_PARAM(elementQualifiesForWritingToolsPreservationCache);
 #endif
 
-    if (style.textDecorationLineInEffect() & TextDecorationLine::Underline)
+    if (style.textDecorationLineInEffect().hasUnderline())
         [attributes setObject:[NSNumber numberWithInteger:NSUnderlineStyleSingle] forKey:NSUnderlineStyleAttributeName];
     else
         [attributes removeObjectForKey:NSUnderlineStyleAttributeName];
 
-    if (style.textDecorationLineInEffect() & TextDecorationLine::LineThrough)
+    if (style.textDecorationLineInEffect().hasLineThrough())
         [attributes setObject:[NSNumber numberWithInteger:NSUnderlineStyleSingle] forKey:NSStrikethroughStyleAttributeName];
     else
         [attributes removeObjectForKey:NSStrikethroughStyleAttributeName];
 
-    if (auto ctFont = style.fontCascade().primaryFont()->getCTFont())
+    if (auto ctFont = style.fontCascade().primaryFont()->ctFont())
         [attributes setObject:(__bridge PlatformFont *)ctFont forKey:NSFontAttributeName];
     else {
         auto size = style.fontCascade().primaryFont()->platformData().size();

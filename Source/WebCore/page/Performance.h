@@ -42,6 +42,7 @@
 #include <memory>
 #include <wtf/ContinuousTime.h>
 #include <wtf/ListHashSet.h>
+#include <wtf/MonotonicTime.h>
 
 namespace JSC {
 class JSGlobalObject;
@@ -54,6 +55,7 @@ class Document;
 class DocumentLoadTiming;
 class DocumentLoader;
 class EventCounts;
+class LargestContentfulPaint;
 class NetworkLoadMetrics;
 class PerformanceUserTiming;
 class PerformanceEntry;
@@ -108,10 +110,12 @@ public:
     void clearMeasures(const String& measureName);
 
     void addNavigationTiming(DocumentLoader&, Document&, CachedResource&, const DocumentLoadTiming&, const NetworkLoadMetrics&);
-    void navigationFinished(const NetworkLoadMetrics&);
+    void documentLoadFinished(const NetworkLoadMetrics&);
+    void navigationFinished(MonotonicTime loadEventEnd);
     void addResourceTiming(ResourceTiming&&);
 
-    void reportFirstContentfulPaint();
+    void reportFirstContentfulPaint(DOMHighResTimeStamp);
+    void reportLargestContentfulPaint(Ref<LargestContentfulPaint>&&);
 
     void removeAllObservers();
     void registerPerformanceObserver(PerformanceObserver&);
@@ -130,7 +134,7 @@ public:
     using RefCounted::ref;
     using RefCounted::deref;
 
-    void scheduleNavigationObservationTaskIfNeeded();
+    void scheduleTaskIfNeeded();
 
     PerformanceNavigationTiming* navigationTiming() { return m_navigationTiming.get(); }
 
@@ -148,7 +152,6 @@ private:
     void resourceTimingBufferFullTimerFired();
 
     void queueEntry(PerformanceEntry&);
-    void scheduleTaskIfNeeded();
 
     const std::unique_ptr<EventCounts> m_eventCounts;
     mutable RefPtr<PerformanceNavigation> m_navigation;
@@ -170,13 +173,14 @@ private:
     // https://w3c.github.io/resource-timing/#dfn-resource-timing-buffer-full-flag
     bool m_resourceTimingBufferFullFlag { false };
     bool m_waitingForBackupBufferToBeProcessed { false };
-    bool m_hasScheduledTimingBufferDeliveryTask { false };
+    bool m_hasScheduledDeliveryTask { false };
 
     MonotonicTime m_timeOrigin;
-    UNUSED_MEMBER_VARIABLE ContinuousTime m_continuousTimeOrigin;
+    ContinuousTime m_continuousTimeOrigin;
 
     RefPtr<PerformanceNavigationTiming> m_navigationTiming;
     RefPtr<PerformancePaintTiming> m_firstContentfulPaint;
+    RefPtr<PerformanceEntry> m_largestContentfulPaint;
     std::unique_ptr<PerformanceUserTiming> m_userTiming;
 
     ListHashSet<RefPtr<PerformanceObserver>> m_observers;

@@ -74,23 +74,23 @@ namespace LayoutIntegration {
 static LayoutUnit usedValueOrZero(const Style::MarginEdge& marginEdge, std::optional<LayoutUnit> availableWidth)
 {
     if (auto fixed = marginEdge.tryFixed())
-        return LayoutUnit { fixed->value };
+        return LayoutUnit { fixed->resolveZoom(Style::ZoomNeeded { }) };
 
     if (marginEdge.isAuto() || !availableWidth)
         return { };
 
-    return Style::evaluateMinimum(marginEdge, *availableWidth);
+    return Style::evaluateMinimum<LayoutUnit>(marginEdge, *availableWidth, Style::ZoomNeeded { });
 }
 
 static LayoutUnit usedValueOrZero(const Style::PaddingEdge& paddingEdge, std::optional<LayoutUnit> availableWidth)
 {
     if (auto fixed = paddingEdge.tryFixed())
-        return LayoutUnit { fixed->value };
+        return LayoutUnit { fixed->resolveZoom(Style::ZoomNeeded { }) };
 
     if (!availableWidth)
         return { };
 
-    return Style::evaluateMinimum(paddingEdge, *availableWidth);
+    return Style::evaluateMinimum<LayoutUnit>(paddingEdge, *availableWidth, Style::ZoomNeeded { });
 }
 
 static inline void adjustBorderForTableAndFieldset(const RenderBoxModelObject& renderer, RectEdges<LayoutUnit>& borderWidths)
@@ -182,7 +182,7 @@ void BoxGeometryUpdater::setListMarkerOffsetForMarkerOutside(const RenderListMar
         }
         auto offset = offsetFromParentListItem;
         for (ancestor = ancestor->containingBlock(); ancestor; ancestor = ancestor->containingBlock()) {
-            offset -= (ancestor->borderStart() + ancestor->paddingStart());
+            offset -= (ancestor->marginStart() + ancestor->borderStart() + ancestor->paddingStart());
             if (ancestor == associatedListItem)
                 break;
         }
@@ -241,7 +241,7 @@ Layout::BoxGeometry::Edges BoxGeometryUpdater::logicalBorder(const RenderBoxMode
     auto& style = renderer.style();
 
     auto borderWidths = RectEdges<LayoutUnit>::map(style.borderWidth(), [](auto width) {
-        return LayoutUnit { Style::evaluate(width) };
+        return Style::evaluate<LayoutUnit>(width, Style::ZoomNeeded { });
     });
 
     if (!isIntrinsicWidthMode)
@@ -640,10 +640,10 @@ void BoxGeometryUpdater::updateLayoutBoxDimensions(const RenderBox& renderBox, s
     }
 
     boxGeometry.setSpaceForScrollbar(scrollbarSize);
-
-    boxGeometry.setContentBoxWidth(contentLogicalWidthForRenderer(renderBox));
-    boxGeometry.setContentBoxHeight(contentLogicalHeightForRenderer(renderBox));
-
+    if (!renderBox.isOutOfFlowPositioned()) {
+        boxGeometry.setContentBoxWidth(contentLogicalWidthForRenderer(renderBox));
+        boxGeometry.setContentBoxHeight(contentLogicalHeightForRenderer(renderBox));
+    }
     boxGeometry.setVerticalMargin(verticalLogicalMargin(renderBox, availableWidth, writingMode));
     boxGeometry.setHorizontalMargin(inlineMargin);
     boxGeometry.setBorder(border);

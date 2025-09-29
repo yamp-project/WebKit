@@ -196,6 +196,11 @@ namespace JSC {
     macro(FunctionToStringIntrinsic) \
     macro(FunctionBindIntrinsic) \
     macro(IteratorHelperCreateIntrinsic) \
+    macro(WrapForValidIteratorCreateIntrinsic) \
+    macro(AsyncFromSyncIteratorCreateIntrinsic) \
+    macro(PromiseAllContextCreateIntrinsic) \
+    macro(PromiseReactionCreateIntrinsic) \
+    macro(RegExpStringIteratorCreateIntrinsic) \
     \
     /* Getter intrinsics. */ \
     macro(TypedArrayLengthIntrinsic) \

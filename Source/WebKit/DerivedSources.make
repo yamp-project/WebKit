@@ -48,7 +48,6 @@ VPATH = \
     $(WebKit2)/Shared/mac \
     $(WebKit2)/Shared/Notifications \
     $(WebKit2)/WebProcess/ApplePay \
-    $(WebKit2)/WebProcess/ApplicationCache \
     $(WebKit2)/WebProcess/Automation \
     $(WebKit2)/WebProcess/Cache \
     $(WebKit2)/WebProcess/Databases/IndexedDB \
@@ -165,7 +164,6 @@ MESSAGE_RECEIVERS = \
 	UIProcess/GPU/GPUProcessProxy \
 	UIProcess/WebAuthentication/WebAuthenticatorCoordinatorProxy \
 	UIProcess/WebPasteboardProxy \
-	UIProcess/UserContent/WebUserContentControllerProxy \
 	UIProcess/Inspector/WebInspectorBackendProxy \
 	UIProcess/Inspector/WebInspectorUIProxy \
 	UIProcess/Inspector/RemoteWebInspectorUIProxy \
@@ -279,11 +277,13 @@ MESSAGE_RECEIVERS = \
 	GPUProcess/ShapeDetection/RemoteBarcodeDetector \
 	GPUProcess/ShapeDetection/RemoteFaceDetector \
 	GPUProcess/ShapeDetection/RemoteTextDetector \
+	GPUProcess/graphics/Model/RemoteDDMesh \
 	GPUProcess/graphics/RemoteGraphicsContext \
 	GPUProcess/graphics/RemoteGraphicsContextGL \
 	GPUProcess/graphics/RemoteImageBuffer \
 	GPUProcess/graphics/RemoteImageBufferSet \
 	GPUProcess/graphics/RemoteRenderingBackend \
+	GPUProcess/graphics/RemoteSnapshotRecorder \
 	GPUProcess/graphics/WebGPU/RemoteAdapter \
 	GPUProcess/graphics/WebGPU/RemoteBindGroup \
 	GPUProcess/graphics/WebGPU/RemoteBindGroupLayout \
@@ -393,15 +393,7 @@ SANDBOX_IMPORT_DIR=$(SDKROOT)/usr/local/share/sandbox/profiles/embedded/imports
 
 # Log messages
 
-all : WebCoreLogDefinitions.h WebKitLogDefinitions.h
-
-WEBCORE_LOG_DECLARATIONS_FILES = \
-    WebCoreLogDefinitions.h \
-    WebCoreVirtualLogFunctions.h \
-
-$(WEBCORE_LOG_DECLARATIONS_FILES) : $(WebCorePrivateHeaders)/LogMessages.in
-	@echo Creating WebCore log definitions $@
-	$(PYTHON) $(WebCorePrivateHeaders)/generate-log-declarations.py $< $(WEBCORE_LOG_DECLARATIONS_FILES)
+all : WebKitLogDefinitions.h
 
 WEBKIT_LOG_DECLARATIONS_FILES = \
     WebKitLogDefinitions.h \
@@ -452,20 +444,26 @@ WEBPUSHD_SANDBOX_PROFILE = \
 	com.apple.WebKit.webpushd.mac.sb
 endif
 
-SANDBOX_PROFILES_IOS = \
+SANDBOX_PROFILES_EMBEDDED = \
 	com.apple.WebKit.adattributiond.sb \
 	com.apple.WebKit.webpushd.sb \
 	com.apple.WebKit.GPU.sb \
-	com.apple.WebKit.GPU.Development.sb \
-	com.apple.WebKit.Model.sb \
 	com.apple.WebKit.Networking.sb \
+	com.apple.WebKit.WebContent.sb
+
+ifneq ($(filter xr%,$(WK_PLATFORM_NAME)),)
+SANDBOX_PROFILES_EMBEDDED += com.apple.WebKit.Model.sb
+endif
+
+ifeq ($(WK_PLATFORM_NAME), iphoneos)
+SANDBOX_PROFILES_EMBEDDED += com.apple.WebKit.GPU.Development.sb \
 	com.apple.WebKit.Networking.Development.sb \
-	com.apple.WebKit.WebContent.sb \
 	com.apple.WebKit.WebContent.Development.sb
+endif
 
-sandbox-profiles-ios : $(SANDBOX_PROFILES_IOS)
+sandbox-profiles-embedded : $(SANDBOX_PROFILES_EMBEDDED)
 
-all : $(SANDBOX_PROFILES_WITHOUT_WEBPUSHD) $(WEBPUSHD_SANDBOX_PROFILE) $(SANDBOX_PROFILES_IOS)
+all : $(SANDBOX_PROFILES_WITHOUT_WEBPUSHD) $(WEBPUSHD_SANDBOX_PROFILE) $(SANDBOX_PROFILES_EMBEDDED)
 
 NOTIFICATION_ALLOW_LISTS = \
 	Resources/cocoa/NotificationAllowList/EmbeddedForwardedNotifications.def \
@@ -529,6 +527,7 @@ WEBDRIVER_BIDI_PROTOCOL_INPUT_FILES = \
     $(WebKit2)/UIProcess/Automation/protocol/BidiBrowser.json \
     $(WebKit2)/UIProcess/Automation/protocol/BidiBrowsingContext.json \
     $(WebKit2)/UIProcess/Automation/protocol/BidiLog.json \
+    $(WebKit2)/UIProcess/Automation/protocol/BidiPermissions.json \
     $(WebKit2)/UIProcess/Automation/protocol/BidiScript.json \
     $(WebKit2)/UIProcess/Automation/protocol/BidiSession.json \
     $(WebKit2)/UIProcess/Automation/protocol/BidiStorage.json \
@@ -598,7 +597,6 @@ SERIALIZATION_DESCRIPTION_FILES = \
 	GPUProcess/media/InitializationSegmentInfo.serialization.in \
 	GPUProcess/media/MediaDescriptionInfo.serialization.in \
 	GPUProcess/media/RemoteMediaPlayerProxyConfiguration.serialization.in \
-	GPUProcess/media/RemoteTrackInfo.serialization.in \
 	GPUProcess/media/TextTrackPrivateRemoteConfiguration.serialization.in \
 	GPUProcess/media/TrackPrivateRemoteConfiguration.serialization.in \
 	GPUProcess/media/VideoTrackPrivateRemoteConfiguration.serialization.in \
@@ -828,6 +826,19 @@ SERIALIZATION_DESCRIPTION_FILES = \
 	Shared/mac/SecItemRequestData.serialization.in \
 	Shared/mac/SecItemResponseData.serialization.in \
 	Shared/mac/WebHitTestResultPlatformData.serialization.in \
+	Shared/Model/DDMeshDescriptor.serialization.in \
+	Shared/Model/DDMeshPart.serialization.in \
+	Shared/Model/DDReplaceVertices.serialization.in \
+	Shared/Model/DDUpdateMeshDescriptor.serialization.in \
+	Shared/Model/DDVertexAttributeFormat.serialization.in \
+	Shared/Model/DDVertexLayout.serialization.in \
+	Shared/Model/DDMeshDescriptor.serialization.in \
+	Shared/Model/DDMeshPart.serialization.in \
+	Shared/Model/DDReplaceVertices.serialization.in \
+	Shared/Model/DDUpdateMeshDescriptor.serialization.in \
+	Shared/Model/DDVertexAttributeFormat.serialization.in \
+	Shared/Model/DDVertexLayout.serialization.in \
+	Shared/Model/ModelObjectDescriptorBase.serialization.in \
 	Shared/WebsiteDataStoreParameters.serialization.in \
 	Shared/WebsiteData/UnifiedOriginStorageLevel.serialization.in \
 	Shared/WebsiteData/WebsiteData.serialization.in \
@@ -927,6 +938,7 @@ SERIALIZATION_DESCRIPTION_FILES = \
 WEBCORE_SERIALIZATION_DESCRIPTION_FILES = \
 	HTTPHeaderNames.serialization.in \
 	ActivityState.serialization.in \
+	DDModel.serialization.in \
 	DragActions.serialization.in \
 	InbandTextTrackPrivate.serialization.in \
 	IndexedDB.serialization.in \
@@ -1030,7 +1042,6 @@ all : JSWebExtensionAPIUnified.mm $(EXTENSION_INTERFACES:%=JS%.h) $(EXTENSION_IN
 
 ifeq ($(USE_INTERNAL_SDK),YES)
 WEBKIT_ADDITIONS_SWIFT_FILES = \
-	WebPageWebViewAdditions.swift \
 	WKSeparatedImageView.swift \
 	CredentialUpdaterShim.swift \
 #

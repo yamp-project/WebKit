@@ -37,9 +37,12 @@
 #include "NativeCalleeRegistry.h"
 #include "PCToCodeOriginMap.h"
 #include "VMManager.h"
+#include "WasmBaselineData.h"
+#include "WasmCallProfile.h"
 #include "WasmCallingConvention.h"
 #include "WasmModuleInformation.h"
 #include "WebAssemblyBuiltin.h"
+#include "WebAssemblyBuiltinTrampoline.h"
 
 #include <wtf/TZoneMallocInlines.h>
 #include <wtf/text/MakeString.h>
@@ -50,7 +53,7 @@ namespace JSC::Wasm {
 
 WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(Callee);
 WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(JITCallee);
-WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(JSEntrypointCallee);
+WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(JSToWasmCallee);
 WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(WasmToJSCallee);
 WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(JSToWasmICCallee);
 WTF_MAKE_COMPACT_TZONE_ALLOCATED_IMPL(OptimizingJITCallee);
@@ -91,8 +94,8 @@ inline void Callee::runWithDowncast(const Func& func)
     case CompilationMode::IPIntMode:
         func(static_cast<IPIntCallee*>(this));
         break;
-    case CompilationMode::JSToWasmEntrypointMode:
-        func(static_cast<JSEntrypointCallee*>(this));
+    case CompilationMode::JSToWasmMode:
+        func(static_cast<JSToWasmCallee*>(this));
         break;
 #if ENABLE(WEBASSEMBLY_BBQJIT)
     case CompilationMode::BBQMode:
@@ -157,9 +160,9 @@ std::tuple<void*, void*> Callee::range() const
     return result;
 }
 
-RegisterAtOffsetList* Callee::calleeSaveRegisters()
+const RegisterAtOffsetList* Callee::calleeSaveRegisters()
 {
-    RegisterAtOffsetList* result = nullptr;
+    const RegisterAtOffsetList* result = nullptr;
     runWithDowncast([&](auto* derived) {
         result = derived->calleeSaveRegistersImpl();
     });
@@ -207,14 +210,6 @@ void JSToWasmICCallee::setEntrypoint(MacroAssemblerCodeRef<JSEntryPtrTag>&& entr
 
 WasmToJSCallee::WasmToJSCallee()
     : Callee(Wasm::CompilationMode::WasmToJSMode)
-    , m_boxedThis(CalleeBits::encodeNativeCallee(this))
-{
-    NativeCalleeRegistry::singleton().registerCallee(this);
-}
-
-WasmToJSCallee::WasmToJSCallee(FunctionSpaceIndex index, std::pair<const Name*, RefPtr<NameSection>>&& name)
-    : Callee(Wasm::CompilationMode::WasmToJSMode, index, WTFMove(name))
-    , m_boxedThis(CalleeBits::encodeNativeCallee(this))
 {
     NativeCalleeRegistry::singleton().registerCallee(this);
 }
@@ -232,7 +227,6 @@ WasmToJSCallee& WasmToJSCallee::singleton()
 IPIntCallee::IPIntCallee(FunctionIPIntMetadataGenerator& generator, FunctionSpaceIndex index, std::pair<const Name*, RefPtr<NameSection>>&& name)
     : Callee(Wasm::CompilationMode::IPIntMode, index, WTFMove(name))
     , m_functionIndex(generator.m_functionIndex)
-    , m_signatures(WTFMove(generator.m_signatures))
     , m_bytecode(generator.m_bytecode.data() + generator.m_bytecodeOffset)
     , m_bytecodeEnd(m_bytecode + (generator.m_bytecode.size() - generator.m_bytecodeOffset - 1))
     , m_metadata(WTFMove(generator.m_metadata))
@@ -244,6 +238,7 @@ IPIntCallee::IPIntCallee(FunctionIPIntMetadataGenerator& generator, FunctionSpac
     , m_numLocals(generator.m_numLocals)
     , m_numArgumentsOnStack(generator.m_numArgumentsOnStack)
     , m_maxFrameSizeInV128(generator.m_maxFrameSizeInV128)
+    , m_numCallProfiles(generator.m_numCallProfiles)
     , m_tierUpCounter(WTFMove(generator.m_tierUpCounter))
 {
     if (size_t count = generator.m_exceptionHandlers.size()) {
@@ -286,29 +281,15 @@ void IPIntCallee::setEntrypoint(CodePtr<WasmEntryPtrTag> entrypoint)
     NativeCalleeRegistry::singleton().registerCallee(this);
 }
 
-RegisterAtOffsetList* IPIntCallee::calleeSaveRegistersImpl()
+const RegisterAtOffsetList* IPIntCallee::calleeSaveRegistersImpl()
 {
-    static LazyNeverDestroyed<RegisterAtOffsetList> calleeSaveRegisters;
-    static std::once_flag initializeFlag;
-    std::call_once(initializeFlag, [] {
-        RegisterSet registers;
-        registers.add(GPRInfo::regCS0, IgnoreVectors); // JSWebAssemblyInstance
-#if CPU(X86_64)
-        registers.add(GPRInfo::regCS1, IgnoreVectors); // MC (pointer to metadata)
-        registers.add(GPRInfo::regCS2, IgnoreVectors); // PB
-#elif CPU(ARM64) || CPU(RISCV64)
-        registers.add(GPRInfo::regCS6, IgnoreVectors); // MC
-        registers.add(GPRInfo::regCS7, IgnoreVectors); // PB
-#elif CPU(ARM)
-        registers.add(GPRInfo::regCS0, IgnoreVectors); // MC
-        registers.add(GPRInfo::regCS1, IgnoreVectors); // PB
-#else
-#error Unsupported architecture.
-#endif
-        ASSERT(registers.numberOfSetRegisters() == numberOfIPIntCalleeSaveRegisters);
-        calleeSaveRegisters.construct(WTFMove(registers));
-    });
-    return &calleeSaveRegisters.get();
+    ASSERT(RegisterAtOffsetList::ipintCalleeSaveRegisters().registerCount() == numberOfIPIntCalleeSaveRegisters);
+    return &RegisterAtOffsetList::ipintCalleeSaveRegisters();
+}
+
+bool IPIntCallee::needsProfiling() const
+{
+    return m_numCallProfiles;
 }
 
 #if ENABLE(WEBASSEMBLY_OMGJIT)
@@ -393,11 +374,14 @@ const StackMap& OptimizingJITCallee::stackmap(CallSiteIndex callSiteIndex) const
 
 Box<PCToCodeOriginMap> OptimizingJITCallee::materializePCToOriginMap(B3::PCToOriginMap&& originMap, LinkBuffer& linkBuffer)
 {
+    constexpr bool verbose = false;
+    ASSERT(originMap.ranges().size());
+    dataLogLnIf(verbose, "Materializing PCToOriginMap of size: ", originMap.ranges().size());
     constexpr bool shouldBuildMapping = true;
     PCToCodeOriginMapBuilder builder(shouldBuildMapping);
     for (const B3::PCToOriginMap::OriginRange& originRange : originMap.ranges()) {
         B3::Origin b3Origin = originRange.origin;
-        if (auto* origin = b3Origin.maybeOMGOrigin()) {
+        if (auto* origin = b3Origin.maybeWasmOrigin()) {
             // We stash the location into a BytecodeIndex.
             builder.appendItem(originRange.label, CodeOrigin(BytecodeIndex(origin->m_callSiteIndex.bits())));
         } else
@@ -411,7 +395,7 @@ Box<PCToCodeOriginMap> OptimizingJITCallee::materializePCToOriginMap(B3::PCToOri
         PCToCodeOriginMapBuilder samplingProfilerBuilder(shouldBuildMapping);
         for (const B3::PCToOriginMap::OriginRange& originRange : originMap.ranges()) {
             B3::Origin b3Origin = originRange.origin;
-            if (auto* origin = b3Origin.maybeOMGOrigin()) {
+            if (auto* origin = b3Origin.maybeWasmOrigin()) {
                 // We stash the location into a BytecodeIndex.
                 samplingProfilerBuilder.appendItem(originRange.label, CodeOrigin(BytecodeIndex(origin->m_opcodeOrigin.location())));
             } else
@@ -424,8 +408,8 @@ Box<PCToCodeOriginMap> OptimizingJITCallee::materializePCToOriginMap(B3::PCToOri
 
 #endif
 
-JSEntrypointCallee::JSEntrypointCallee(TypeIndex typeIndex, bool)
-    : Callee(Wasm::CompilationMode::JSToWasmEntrypointMode)
+JSToWasmCallee::JSToWasmCallee(TypeIndex typeIndex, bool)
+    : Callee(Wasm::CompilationMode::JSToWasmMode)
     , m_typeIndex(typeIndex)
 {
     const TypeDefinition& signature = TypeInformation::get(typeIndex).expand();
@@ -434,12 +418,12 @@ JSEntrypointCallee::JSEntrypointCallee(TypeIndex typeIndex, bool)
     RegisterAtOffsetList savedResultRegisters = wasmFrameConvention.computeResultsOffsetList();
     size_t totalFrameSize = wasmFrameConvention.headerAndArgumentStackSizeInBytes;
     totalFrameSize += savedResultRegisters.sizeOfAreaInBytes();
-    totalFrameSize += JSEntrypointCallee::RegisterStackSpaceAligned;
+    totalFrameSize += JSToWasmCallee::RegisterStackSpaceAligned;
     totalFrameSize = WTF::roundUpToMultipleOf<stackAlignmentBytes()>(totalFrameSize);
     m_frameSize = totalFrameSize;
 }
 
-CodePtr<WasmEntryPtrTag> JSEntrypointCallee::entrypointImpl() const
+CodePtr<WasmEntryPtrTag> JSToWasmCallee::entrypointImpl() const
 {
 #if ENABLE(JIT)
     if (Options::useJIT())
@@ -448,26 +432,19 @@ CodePtr<WasmEntryPtrTag> JSEntrypointCallee::entrypointImpl() const
     return LLInt::getCodeFunctionPtr<CFunctionPtrTag>(js_to_wasm_wrapper_entry);
 }
 
-RegisterAtOffsetList* JSEntrypointCallee::calleeSaveRegistersImpl()
+const RegisterAtOffsetList* JSToWasmCallee::calleeSaveRegistersImpl()
 {
     // This must be the same to JSToWasm's callee save registers.
     // The reason is that we may use m_replacementCallee which can be set at any time.
     // So, we must store the same callee save registers at the same location to the JIT version.
-    static LazyNeverDestroyed<RegisterAtOffsetList> calleeSaveRegisters;
-    static std::once_flag initializeFlag;
-    std::call_once(initializeFlag, [] {
-        RegisterSet registers = RegisterSetBuilder::wasmPinnedRegisters();
-#if CPU(X86_64)
-#elif CPU(ARM64) || CPU(RISCV64)
-        ASSERT(registers.numberOfSetRegisters() == 3);
+#if CPU(X86_64) || CPU(ARM64) || CPU(RISCV64)
+    ASSERT(RegisterAtOffsetList::wasmPinnedRegisters().registerCount() == 3);
 #elif CPU(ARM)
 #else
 #error Unsupported architecture.
 #endif
-        calleeSaveRegisters.construct(WTFMove(registers));
-    });
-    ASSERT(WTF::roundUpToMultipleOf<stackAlignmentBytes()>(calleeSaveRegisters->sizeOfAreaInBytes()) == SpillStackSpaceAligned);
-    return &calleeSaveRegisters.get();
+    ASSERT(WTF::roundUpToMultipleOf<stackAlignmentBytes()>(RegisterAtOffsetList::wasmPinnedRegisters().sizeOfAreaInBytes()) == SpillStackSpaceAligned);
+    return &RegisterAtOffsetList::wasmPinnedRegisters();
 }
 
 #if ENABLE(WEBASSEMBLY_BBQJIT)
@@ -492,19 +469,28 @@ BBQCallee::~BBQCallee()
     }
 }
 
-#endif
 
-WasmBuiltinCallee::WasmBuiltinCallee(const WebAssemblyBuiltin* builtin, FunctionSpaceIndex index, std::pair<const Name*, RefPtr<NameSection>>&& name)
-    : Callee(Wasm::CompilationMode::WasmBuiltinMode, index, WTFMove(name))
-    , m_builtin(builtin, { })
+const RegisterAtOffsetList* BBQCallee::calleeSaveRegistersImpl()
 {
-    void* cFunctionPtr = std::bit_cast<void*>(m_builtin->implementation());
-    m_hostFunction = CodePtr<CFunctionPtrTag>::fromTaggedPtr(cFunctionPtr).retagged<WasmEntryPtrTag>();
+    return &RegisterAtOffsetList::bbqCalleeSaveRegisters();
 }
 
-CodePtr<WasmEntryPtrTag> WasmBuiltinCallee::entrypointImpl() const
+#endif
+
+WasmBuiltinCallee::WasmBuiltinCallee(const WebAssemblyBuiltin* builtin, std::pair<const Name*, RefPtr<NameSection>>&& name)
+    : Callee(Wasm::CompilationMode::WasmBuiltinMode, Wasm::FunctionSpaceIndex(0xDEAD), WTFMove(name))
+    , m_builtin(builtin, { })
 {
-    return CodePtr<CFunctionPtrTag>(m_builtin->implementation()).retagged<WasmEntryPtrTag>();
+#if ENABLE(JIT_CAGE)
+    if (Options::useJITCage()) {
+        auto jitCode = generateWasmBuiltinTrampoline(*builtin);
+        RELEASE_ASSERT(!!jitCode);
+        m_code = jitCode.value(); // hold onto it to retain the code
+        m_trampoline = m_code.code();
+        return;
+    }
+#endif
+    m_trampoline = m_builtin->wasmTrampoline();
 }
 
 } // namespace JSC::Wasm

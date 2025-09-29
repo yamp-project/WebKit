@@ -330,7 +330,7 @@ IntrinsicWidthConstraints TableFormattingContext::computedPreferredWidthForColum
                 return formattingGeometry.computedColumnWidth(*columnBox);
             }();
         if (fixedWidth)
-            column.setComputedLogicalWidth({ *fixedWidth, LengthType::Fixed });
+            column.setComputedLogicalWidth(Style::Length<CSS::Nonnegative, float> { *fixedWidth });
         }
     };
     collectColsFixedWidth();
@@ -363,7 +363,7 @@ IntrinsicWidthConstraints TableFormattingContext::computedPreferredWidthForColum
             auto columnIndex = cellPosition.column;
             WTF::switchOn(cellStyle.logicalWidth(),
                 [&](const Style::PreferredSize::Fixed& fixed) {
-                    auto fixedWidth = LayoutUnit { fixed.value } + horizontalBorderAndPaddingWidth;
+                    auto fixedWidth = LayoutUnit { fixed.resolveZoom(Style::ZoomNeeded { }) } + horizontalBorderAndPaddingWidth;
                     maximumFixedColumnWidths[columnIndex] = std::max(maximumFixedColumnWidths[columnIndex].value_or(0_lu), fixedWidth);
                     hasColumnWithFixedWidth = true;
                 },
@@ -445,7 +445,7 @@ IntrinsicWidthConstraints TableFormattingContext::computedPreferredWidthForColum
         if (hasColumnWithFixedWidth && !hasColumnWithPercentWidth) {
             for (size_t columnIndex = 0; columnIndex < columnList.size(); ++columnIndex) {
                 if (auto fixedWidth = maximumFixedColumnWidths[columnIndex])
-                    columnList[columnIndex].setComputedLogicalWidth({ *fixedWidth, LengthType::Fixed });
+                    columnList[columnIndex].setComputedLogicalWidth(Style::Length<CSS::Nonnegative, float> { *fixedWidth });
             }
             return;
         } 
@@ -461,7 +461,7 @@ IntrinsicWidthConstraints TableFormattingContext::computedPreferredWidthForColum
         for (size_t columnIndex = 0; columnIndex < columnList.size(); ++columnIndex) {
             auto nonPercentColumnWidth = columnIntrinsicWidths[columnIndex].maximum;
             if (auto fixedWidth = maximumFixedColumnWidths[columnIndex]) {
-                columnList[columnIndex].setComputedLogicalWidth({ *fixedWidth, LengthType::Fixed });
+                columnList[columnIndex].setComputedLogicalWidth(Style::Length<CSS::Nonnegative, float> { *fixedWidth });
                 nonPercentColumnWidth = std::max(nonPercentColumnWidth, *fixedWidth);
             }
             if (!maximumPercentColumnWidths[columnIndex]) {
@@ -469,7 +469,7 @@ IntrinsicWidthConstraints TableFormattingContext::computedPreferredWidthForColum
                 continue;
             }
             auto percent = std::min(*maximumPercentColumnWidths[columnIndex], remainingPercent);
-            columnList[columnIndex].setComputedLogicalWidth({ percent, LengthType::Percent });
+            columnList[columnIndex].setComputedLogicalWidth(Style::Percentage<CSS::Nonnegative, float> { percent });
             percentMaximumWidth = std::max(percentMaximumWidth, LayoutUnit { nonPercentColumnWidth * 100.0f / percent });
             remainingPercent -= percent;
         }

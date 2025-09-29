@@ -153,7 +153,7 @@ header: <WebCore/AttributedString.h>
 [CustomHeader] struct WebCore::ParagraphStyleTextList {
     WebCore::AttributedStringTextListID thisID
     String markerFormat;
-    [Validator='startingItemNumber >= 0'] int64_t startingItemNumber;
+    int64_t startingItemNumber;
 }
 
 header: <WebCore/AttributedString.h>
@@ -231,14 +231,24 @@ header: <WebCore/AttributedString.h>
     Vector<WebCore::TextTab> textTabs;
 }
 
-[Nested] struct WebCore::AttributedString::AttributeValue {
+[Nested, CreateUsing=createFromIPCData] struct WebCore::AttributedString::FontWrapper {
+    String postScriptName();
+    double pointSize();
+    CTFontDescriptorOptions fontDescriptorOptions();
+    std::optional<WebCore::FontPlatformSerializedAttributes> fontSerializedAttributes();
+}
+
 #if ENABLE(MULTI_REPRESENTATION_HEIC)
-    Variant<double, String, URL, Ref<WebCore::Font>, Vector<String>, Vector<double>, WebCore::ParagraphStyle, RetainPtr<NSPresentationIntent>, RetainPtr<NSShadow>, RetainPtr<NSDate>, WebCore::AttributedString::ColorFromCGColor, WebCore::AttributedString::ColorFromPlatformColor, WebCore::MultiRepresentationHEICAttachmentData, WebCore::TextAttachmentFileWrapper, WebCore::TextAttachmentMissingImage> value;
+[Nested] struct WebCore::AttributedString::AttributeValue {
+    Variant<double, String, URL, WebCore::AttributedString::FontWrapper, Vector<String>, Vector<double>, WebCore::ParagraphStyle, RetainPtr<NSPresentationIntent>, RetainPtr<NSShadow>, RetainPtr<NSDate>, WebCore::AttributedString::ColorFromCGColor, WebCore::AttributedString::ColorFromPlatformColor, WebCore::MultiRepresentationHEICAttachmentData, WebCore::TextAttachmentFileWrapper, WebCore::TextAttachmentMissingImage> value;
+}
 #endif
 #if !ENABLE(MULTI_REPRESENTATION_HEIC)
-    Variant<double, String, URL, Ref<WebCore::Font>, Vector<String>, Vector<double>, WebCore::ParagraphStyle, RetainPtr<NSPresentationIntent>, RetainPtr<NSShadow>, RetainPtr<NSDate>, WebCore::AttributedString::ColorFromCGColor, WebCore::AttributedString::ColorFromPlatformColor, WebCore::TextAttachmentFileWrapper, WebCore::TextAttachmentMissingImage> value;
-#endif
+[Nested] struct WebCore::AttributedString::AttributeValue {
+    Variant<double, String, URL, WebCore::AttributedString::FontWrapper, Vector<String>, Vector<double>, WebCore::ParagraphStyle, RetainPtr<NSPresentationIntent>, RetainPtr<NSShadow>, RetainPtr<NSDate>, WebCore::AttributedString::ColorFromCGColor, WebCore::AttributedString::ColorFromPlatformColor, WebCore::TextAttachmentFileWrapper, WebCore::TextAttachmentMissingImage> value;
 }
+#endif
+
 
 [Nested] struct WebCore::AttributedString::ColorFromPlatformColor {
     WebCore::Color color
@@ -367,19 +377,19 @@ class WebCore::PaymentSessionError {
 
 headers: <pal/cocoa/PassKitSoftLink.h>
 class WebCore::PaymentMethod {
-    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentMethodClass()], Validator='m_pkPaymentMethod'] RetainPtr<PKPaymentMethod> m_pkPaymentMethod;
+    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentMethodClassSingleton()], Validator='m_pkPaymentMethod'] RetainPtr<PKPaymentMethod> m_pkPaymentMethod;
 };
 
 class WebCore::Payment {
-    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentClass()]] RetainPtr<PKPayment> pkPayment();
+    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentClassSingleton()]] RetainPtr<PKPayment> pkPayment();
 };
 
 class WebCore::PaymentContact {
-    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKContactClass()]] RetainPtr<PKContact> pkContact();
+    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKContactClassSingleton()]] RetainPtr<PKContact> pkContact();
 };
 
 class WebCore::PaymentMerchantSession {
-    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentMerchantSessionClass()]] RetainPtr<PKPaymentMerchantSession> pkPaymentMerchantSession();
+    [Precondition='PAL::isPassKitCoreFrameworkAvailable()', SecureCodingAllowed=[PAL::getPKPaymentMerchantSessionClassSingleton()]] RetainPtr<PKPaymentMerchantSession> pkPaymentMerchantSession();
 };
 #endif
 
@@ -527,8 +537,4 @@ using WebCore::WritingTools::Session::ID = WTF::UUID
 
 #if ENABLE(MEDIA_CONTROLS_CONTEXT_MENUS) && USE(UICONTEXTMENU)
 using WebCore::MediaControlsContextMenuItem::ID = uint64_t;
-#endif
-
-#if PLATFORM(IOS_FAMILY)
-[Nested] enum class WebCore::MediaSessionHelper::ShouldOverride : bool
 #endif

@@ -150,6 +150,11 @@ Color::Color(RelativeColor<ColorRGBFunction<ExtendedDisplayP3<float>>>&& relativ
 {
 }
 
+Color::Color(RelativeColor<ColorRGBFunction<ExtendedLinearDisplayP3<float>>>&& relative)
+    : value { makeIndirectColor(WTFMove(relative)) }
+{
+}
+
 Color::Color(RelativeColor<ColorRGBFunction<ExtendedProPhotoRGB<float>>>&& relative)
     : value { makeIndirectColor(WTFMove(relative)) }
 {
@@ -258,6 +263,7 @@ bool Color::isRelativeColor() const
         || std::holds_alternative<UniqueRef<RelativeColor<OKLCHFunction>>>(value)
         || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedA98RGB<float>>>>>(value)
         || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedDisplayP3<float>>>>>(value)
+        || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedLinearDisplayP3<float>>>>>(value)
         || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedProPhotoRGB<float>>>>>(value)
         || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedRec2020<float>>>>>(value)
         || std::holds_alternative<UniqueRef<RelativeColor<ColorRGBFunction<ExtendedSRGBA<float>>>>>(value)
@@ -337,6 +343,11 @@ Color toStyleColor(const CSS::Color& value, Ref<const Document> document, const 
         .forVisitedLink = forVisitedLink
     };
     return toStyleColor(value, resolutionState);
+}
+
+Color toStyleColor(const CSS::Color& value, const BuilderState& builderState, ForVisitedLink forVisitedLink)
+{
+    return toStyleColor(value, builderState.document(), builderState.style(), builderState.cssToLengthConversionData(), forVisitedLink);
 }
 
 auto ToCSS<Color>::operator()(const Color& value, const RenderStyle& style) -> CSS::Color

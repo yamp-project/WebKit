@@ -29,15 +29,14 @@
 
 #include "config.h"
 #include "StyleBuilderState.h"
+#include "StyleBuilderStateInlines.h"
 
-#include "CSSAppleColorFilterPropertyValue.h"
 #include "CSSCalcRandomCachingKey.h"
 #include "CSSCanvasValue.h"
 #include "CSSColorValue.h"
 #include "CSSCrossfadeValue.h"
 #include "CSSCursorImageValue.h"
 #include "CSSFilterImageValue.h"
-#include "CSSFilterPropertyValue.h"
 #include "CSSFontSelector.h"
 #include "CSSFunctionValue.h"
 #include "CSSGradientValue.h"
@@ -56,7 +55,6 @@
 #include "SVGElementTypeHelpers.h"
 #include "SVGSVGElement.h"
 #include "Settings.h"
-#include "StyleAppleColorFilterProperty.h"
 #include "StyleBuilder.h"
 #include "StyleCachedImage.h"
 #include "StyleCanvasImage.h"
@@ -64,27 +62,24 @@
 #include "StyleCrossfadeImage.h"
 #include "StyleCursorImage.h"
 #include "StyleFilterImage.h"
-#include "StyleFilterProperty.h"
 #include "StyleFontSizeFunctions.h"
 #include "StyleGeneratedImage.h"
 #include "StyleGradientImage.h"
 #include "StyleImageSet.h"
 #include "StyleNamedImage.h"
 #include "StylePaintImage.h"
-#include "TransformOperationsBuilder.h"
+#include "StylePrimitiveNumericTypes+Evaluation.h"
 
 namespace WebCore {
 namespace Style {
 
 BuilderState::BuilderState(RenderStyle& style)
-    : m_styleMap(*this)
-    , m_style(style)
+    : m_style(style)
 {
 }
 
 BuilderState::BuilderState(RenderStyle& style, BuilderContext&& context)
-    : m_styleMap(*this)
-    , m_style(style)
+    : m_style(style)
     , m_context(WTFMove(context))
     , m_cssToLengthConversionData(style, *this)
 {
@@ -96,7 +91,7 @@ BuilderState::BuilderState(RenderStyle& style, BuilderContext&& context)
 // Though all CSS values that can be applied to outermost <svg> elements (width/height/border/padding...)
 // need to respect the scaling. RenderBox (the parent class of LegacyRenderSVGRoot) grabs values like
 // width/height/border/padding/... from the RenderStyle -> for SVG these values would never scale,
-// if we'd pass a 1.0 zoom factor everyhwere. So we only pass a zoom factor of 1.0 for specific
+// if we'd pass a 1.0 zoom factor everywhere. So we only pass a zoom factor of 1.0 for specific
 // properties that are NOT allowed to scale within a zoomed SVG document (letter/word-spacing/font-size).
 bool BuilderState::useSVGZoomRules() const
 {
@@ -131,38 +126,6 @@ RefPtr<StyleImage> BuilderState::createStyleImage(const CSSValue& value) const
     return nullptr;
 }
 
-FilterOperations BuilderState::createFilterOperations(const CSS::FilterProperty& value) const
-{
-    return WebCore::Style::createFilterOperations(value, document(), m_style, m_cssToLengthConversionData);
-}
-
-FilterOperations BuilderState::createFilterOperations(const CSSValue& value) const
-{
-    if (RefPtr primitive = dynamicDowncast<CSSPrimitiveValue>(value)) {
-        ASSERT(primitive->valueID() == CSSValueNone);
-        return { };
-    }
-
-    Ref filterValue = downcast<CSSFilterPropertyValue>(value);
-    return createFilterOperations(filterValue->filter());
-}
-
-FilterOperations BuilderState::createAppleColorFilterOperations(const CSS::AppleColorFilterProperty& value) const
-{
-    return WebCore::Style::createAppleColorFilterOperations(value, document(), m_style, m_cssToLengthConversionData);
-}
-
-FilterOperations BuilderState::createAppleColorFilterOperations(const CSSValue& value) const
-{
-    if (RefPtr primitive = dynamicDowncast<CSSPrimitiveValue>(value)) {
-        ASSERT(primitive->valueID() == CSSValueNone);
-        return { };
-    }
-
-    Ref filterValue = downcast<CSSAppleColorFilterPropertyValue>(value);
-    return createAppleColorFilterOperations(filterValue->filter());
-}
-
 void BuilderState::registerContentAttribute(const AtomString& attributeLocalName)
 {
     if (style().pseudoElementType() == PseudoId::Before || style().pseudoElementType() == PseudoId::After)
@@ -184,12 +147,7 @@ void BuilderState::updateFont()
     auto& fontSelector = const_cast<Document&>(document()).fontSelector();
 
     auto needsUpdate = [&] {
-        if (m_fontDirty)
-            return true;
-        auto* fonts = m_style.fontCascade().fonts();
-        if (!fonts)
-            return true;
-        return false;
+        return m_fontDirty || !m_style.fontCascade().fonts();
     };
 
     if (!needsUpdate())
@@ -201,6 +159,7 @@ void BuilderState::updateFont()
     updateFontForGenericFamilyChange();
     updateFontForZoomChange();
     updateFontForOrientationChange();
+    updateFontForSizeChange();
 
     m_style.fontCascade().update(&fontSelector);
 
@@ -277,6 +236,34 @@ void BuilderState::updateFontForOrientationChange()
     newFontDescription.setNonCJKGlyphOrientation(glyphOrientation);
     newFontDescription.setOrientation(fontOrientation);
     m_style.setFontDescriptionWithoutUpdate(WTFMove(newFontDescription));
+}
+
+void BuilderState::updateFontForSizeChange()
+{
+    auto& fontCascade = m_style.mutableFontCascadeWithoutUpdate();
+    auto fontSize = fontCascade.size();
+
+    auto newWordSpacing = evaluate<float>(m_style.computedWordSpacing(), fontSize, ZoomNeeded { });
+    auto newLetterSpacing = evaluate<float>(m_style.computedLetterSpacing(), fontSize, ZoomNeeded { });
+
+    if (newWordSpacing != fontCascade.wordSpacing())
+        fontCascade.setWordSpacing(newWordSpacing);
+
+    if (newLetterSpacing != fontCascade.letterSpacing()) {
+        fontCascade.setLetterSpacing(newLetterSpacing);
+
+        const auto& oldFontDescription = m_style.fontDescription();
+
+        bool oldShouldDisableLigatures = oldFontDescription.shouldDisableLigaturesForSpacing();
+        bool newShouldDisableLigatures = newLetterSpacing != 0;
+
+        // Switching letter-spacing between zero and non-zero requires updating to enable/disable ligatures.
+        if (oldShouldDisableLigatures != newShouldDisableLigatures) {
+            auto newFontDescription = oldFontDescription;
+            newFontDescription.setShouldDisableLigaturesForSpacing(newShouldDisableLigatures);
+            m_style.setFontDescriptionWithoutUpdate(WTFMove(newFontDescription));
+        }
+    }
 }
 
 void BuilderState::setFontSize(FontCascadeDescription& fontDescription, float size)
@@ -362,10 +349,10 @@ unsigned BuilderState::siblingIndex()
     return count;
 }
 
-void BuilderState::disableNativeAppearanceIfNeeded(CSSPropertyID propertyID, CascadeLevel cascadeLevel)
+void BuilderState::disableNativeAppearanceIfNeeded(CSSPropertyID propertyID, PropertyCascade::Origin origin)
 {
     auto shouldDisable = [&] {
-        if (cascadeLevel != CascadeLevel::Author)
+        if (origin != PropertyCascade::Origin::Author)
             return false;
         if (!CSSProperty::disablesNativeAppearance(propertyID))
             return false;

@@ -69,7 +69,7 @@ public:
         return true;
     }
 
-    FloatRect frameRect() const final;
+    FloatRect localRect() const final;
     bool isNonLayerSVGObject() const final;
 
     bool isAttachment() const final;
@@ -96,7 +96,12 @@ public:
     AccessibilityObject* nextSibling() const final;
     AccessibilityObject* parentObject() const override;
     AccessibilityObject* observableObject() const override;
-    AccessibilityObject* titleUIElement() const override;
+    AccessibilityObject* titleUIElement() const final;
+
+#if ENABLE_ACCESSIBILITY_LOCAL_FRAME
+    AccessibilityObject* crossFrameParentObject() const final;
+    AccessibilityObject* crossFrameChildObject() const final;
+#endif
 
     // Should be called on the root accessibility object to kick off a hit test.
     AccessibilityObject* accessibilityHitTest(const IntPoint&) const final;
@@ -170,7 +175,7 @@ protected:
     ScrollableArea* getScrollableAreaIfScrollable() const final;
     void scrollTo(const IntPoint&) const final;
 
-    bool shouldIgnoreAttributeRole() const override;
+    bool shouldIgnoreAttributeRole() const final;
     AccessibilityRole determineAccessibilityRole() override;
     bool computeIsIgnored() const override;
     std::optional<AccessibilityChildrenVector> imageOverlayElements() final;
@@ -184,6 +189,7 @@ protected:
 private:
     bool isAccessibilityRenderObject() const final { return true; }
     bool isAllowedChildOfTree() const;
+    AccessibilityObject* containingTree() const;
     CharacterRange documentBasedSelectedTextRange() const;
     RefPtr<Element> rootEditableElementForPosition(const Position&) const;
     bool elementIsTextControl(const Element&) const;

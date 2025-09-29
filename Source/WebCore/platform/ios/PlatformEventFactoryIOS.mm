@@ -36,7 +36,7 @@
 #import "WAKAppKitStubs.h"
 #import "WebEvent.h"
 #import "WindowsKeyboardCodes.h"
-#import <wtf/WallTime.h>
+#import <wtf/MonotonicTime.h>
 
 namespace WebCore {
 
@@ -89,7 +89,7 @@ public:
     PlatformMouseEventBuilder(WebEvent *event)
     {
         m_type = mouseEventType(event);
-        m_timestamp = WallTime::now();
+        m_timestamp = MonotonicTime::now();
 
         m_position = pointForEvent(event);
         m_globalPosition = globalPointForEvent(event);
@@ -111,7 +111,7 @@ public:
         ASSERT(event.type == WebEventScrollWheel);
 
         m_type = PlatformEvent::Type::Wheel;
-        m_timestamp = WallTime::now();
+        m_timestamp = MonotonicTime::now();
 
         m_position = IntPoint(pointForEvent(event));
         m_globalPosition = IntPoint(globalPointForEvent(event));
@@ -156,7 +156,7 @@ String keyIdentifierForKeyEvent(WebEvent *event)
     }
     NSString *characters = event.charactersIgnoringModifiers;
     if ([characters length] != 1) {
-        LOG(Events, "received an unexpected number of characters in key event: %u", [characters length]);
+        LOG(Events, "received an unexpected number of characters in key event: %zu", [characters length]);
         return "Unidentified"_s;
     }
     return keyIdentifierForCharCode([characters characterAtIndex:0]);
@@ -491,7 +491,7 @@ public:
 
         m_type = (event.type == WebEventKeyUp ? PlatformEvent::Type::KeyUp : PlatformEvent::Type::KeyDown);
         m_modifiers = modifiersForEvent(event);
-        m_timestamp = WallTime::now();
+        m_timestamp = MonotonicTime::now();
 
         if (event.keyboardFlags & WebEventKeyboardInputModifierFlagsChanged) {
             m_text = emptyString();
@@ -603,7 +603,7 @@ public:
     {
         m_type = touchEventType(event);
         m_modifiers = modifiersForEvent(event);
-        m_timestamp = WallTime::fromRawSeconds(event.timestamp);
+        m_timestamp = MonotonicTime::fromRawSeconds(event.timestamp);
 
         m_gestureScale = event.gestureScale;
         m_gestureRotation = event.gestureRotation;
@@ -623,7 +623,7 @@ public:
     PlatformTouchEventBuilder(PlatformEvent::Type type, IntPoint location)
     {
         m_type = type;
-        m_timestamp = WallTime::now();
+        m_timestamp = MonotonicTime::now();
         
         m_gestureScale = 1;
         m_gestureRotation = 0;

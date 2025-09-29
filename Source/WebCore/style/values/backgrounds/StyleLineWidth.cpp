@@ -30,6 +30,7 @@
 #include "RenderStyleInlines.h"
 #include "StyleBuilderChecking.h"
 #include "StylePrimitiveNumericTypes+CSSValueConversion.h"
+#include "StylePrimitiveNumericTypes+Evaluation.h"
 
 namespace WebCore {
 namespace Style {
@@ -73,13 +74,23 @@ auto CSSValueConversion<LineWidth>::operator()(BuilderState& state, const CSSVal
 
 // MARK: - Evaluate
 
-FloatBoxExtent Evaluation<LineWidthBox>::operator()(const LineWidthBox& value)
+auto Evaluation<LineWidthBox, FloatBoxExtent>::operator()(const LineWidthBox& value, ZoomNeeded token) -> FloatBoxExtent
 {
     return {
-        evaluate(value.top()),
-        evaluate(value.right()),
-        evaluate(value.bottom()),
-        evaluate(value.left()),
+        evaluate<float>(value.top(), token),
+        evaluate<float>(value.right(), token),
+        evaluate<float>(value.bottom(), token),
+        evaluate<float>(value.left(), token),
+    };
+}
+
+auto Evaluation<LineWidthBox, LayoutBoxExtent>::operator()(const LineWidthBox& value, ZoomNeeded token) -> LayoutBoxExtent
+{
+    return {
+        evaluate<LayoutUnit>(value.top(), token),
+        evaluate<LayoutUnit>(value.right(), token),
+        evaluate<LayoutUnit>(value.bottom(), token),
+        evaluate<LayoutUnit>(value.left(), token),
     };
 }
 

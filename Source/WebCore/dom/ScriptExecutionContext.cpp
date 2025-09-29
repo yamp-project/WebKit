@@ -32,6 +32,7 @@
 #include "CachedScript.h"
 #include "CommonVM.h"
 #include "ContentSecurityPolicy.h"
+#include "ContextDestructionObserverInlines.h"
 #include "CrossOriginMode.h"
 #include "CrossOriginOpenerPolicy.h"
 #include "DocumentInlines.h"
@@ -67,6 +68,7 @@
 #include "ServiceWorkerGlobalScope.h"
 #include "ServiceWorkerProvider.h"
 #include "Settings.h"
+#include "SocketProvider.h"
 #include "WebCoreJSClientData.h"
 #include "WebCoreOpaqueRoot.h"
 #include "WorkerGlobalScope.h"
@@ -125,6 +127,7 @@ public:
     RefPtr<ScriptCallStack> m_callStack;
 };
 
+WTF_MAKE_TZONE_ALLOCATED_IMPL(ScriptExecutionContext);
 WTF_MAKE_TZONE_ALLOCATED_IMPL(ScriptExecutionContext::PendingException);
 WTF_MAKE_TZONE_ALLOCATED_IMPL(ScriptExecutionContext::Task);
 
@@ -712,11 +715,19 @@ void ScriptExecutionContext::registerServiceWorker(ServiceWorker& serviceWorker)
 {
     auto addResult = m_serviceWorkers.add(serviceWorker.identifier(), &serviceWorker);
     ASSERT_UNUSED(addResult, addResult.isNewEntry);
+
+    ensureOnMainThread([identifier = serviceWorker.identifier()] {
+        ServiceWorkerProvider::singleton().protectedServiceWorkerConnection()->registerServiceWorkerInServer(identifier);
+    });
 }
 
 void ScriptExecutionContext::unregisterServiceWorker(ServiceWorker& serviceWorker)
 {
     m_serviceWorkers.remove(serviceWorker.identifier());
+
+    ensureOnMainThread([identifier = serviceWorker.identifier()] {
+        ServiceWorkerProvider::singleton().protectedServiceWorkerConnection()->unregisterServiceWorkerInServer(identifier);
+    });
 }
 
 ServiceWorkerContainer* ScriptExecutionContext::serviceWorkerContainer()
@@ -871,7 +882,6 @@ ScriptExecutionContext::HasResourceAccess ScriptExecutionContext::canAccessResou
     case ResourceType::Cookies:
     case ResourceType::Geolocation:
         return HasResourceAccess::Yes;
-    case ResourceType::ApplicationCache:
     case ResourceType::Plugin:
     case ResourceType::WebSQL:
     case ResourceType::IndexedDB:
@@ -1024,6 +1034,11 @@ bool ScriptExecutionContext::isAlwaysOnLoggingAllowed() const
 WebCoreOpaqueRoot root(ScriptExecutionContext* context)
 {
     return WebCoreOpaqueRoot { context };
+}
+
+RefPtr<SocketProvider> ScriptExecutionContext::protectedSocketProvider()
+{
+    return socketProvider();
 }
 
 } // namespace WebCore

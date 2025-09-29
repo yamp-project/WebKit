@@ -100,13 +100,14 @@ enum class WebCore::UserInterfaceLayoutDirection : bool;
     bool hasResourceLoadClient;
 
     Vector<String> mimeTypesWithCustomContentProviders;
+    String overrideReferrerForAllRequests;
 
     bool controlledByAutomation;
     bool isProcessSwap;
 
     bool useDarkAppearance;
     bool useElevatedUserInterfaceLevel;
-    bool allowJSHandleInPageContentWorld;
+    bool allowPostingLegacySynchronousMessages;
 
 #if PLATFORM(MAC)
     std::optional<WebCore::DestinationColorSpace> colorSpace;
@@ -250,7 +251,11 @@ enum class WebCore::UserInterfaceLayoutDirection : bool;
     String openedMainFrameName;
     std::optional<WebCore::FrameIdentifier> mainFrameOpenerIdentifier;
     WebCore::SandboxFlags initialSandboxFlags;
+    WebCore::ReferrerPolicy initialReferrerPolicy;
     std::optional<WebCore::WindowFeatures> windowFeatures;
+    bool statusBarIsVisible;
+    bool menuBarIsVisible;
+    bool toolbarsAreVisible;
 
 #if ENABLE(ADVANCED_PRIVACY_PROTECTIONS)
     Vector<WebCore::LinkDecorationFilteringData> linkDecorationFilteringData;
@@ -280,6 +285,10 @@ enum class WebCore::UserInterfaceLayoutDirection : bool;
 #endif
 
     bool shouldSendConsoleLogsToUIProcessForTesting;
+
+#if ENABLE(IMAGE_ANALYSIS)
+    std::optional<WebCore::ImageTranslationLanguageIdentifiers> imageTranslationLanguageIdentifiers;
+#endif
 }
 
 [Nested] struct WebKit::RemotePageParameters {

@@ -82,7 +82,7 @@ public:
     virtual Type type() const = 0;
 
     WEBCORE_EXPORT GLContext* sharingGLContext();
-    void clearSharingGLContext();
+    void clearGLContexts();
     EGLDisplay eglDisplay() const;
     GLDisplay& glDisplay() const { return m_eglDisplay.get(); }
     bool eglCheckVersion(int major, int minor) const;
@@ -92,9 +92,9 @@ public:
     EGLImage createEGLImage(EGLContext, EGLenum target, EGLClientBuffer, const Vector<EGLAttrib>&) const;
     bool destroyEGLImage(EGLImage) const;
 #if USE(GBM)
-    const Vector<GLDisplay::DMABufFormat>& dmabufFormats();
+    const Vector<GLDisplay::BufferFormat>& bufferFormats();
 #if USE(GSTREAMER)
-    const Vector<GLDisplay::DMABufFormat>& dmabufFormatsForVideo();
+    const Vector<GLDisplay::BufferFormat>& bufferFormatsForVideo();
 #endif
 #endif
 
@@ -128,7 +128,7 @@ protected:
 
 private:
 #if USE(SKIA)
-    void invalidateSkiaGLContexts();
+    void clearSkiaGLContext();
 #endif
 
 #if ENABLE(WEBGL) && !PLATFORM(WIN)

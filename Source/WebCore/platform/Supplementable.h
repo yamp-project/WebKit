@@ -81,11 +81,17 @@ public:
     // specialization can be implemented here and overridden in the base class.
 
     virtual bool isDOMWindowCaches() const { return false; }
+    virtual bool isDOMWindowIndexedDatabase() const { return false; }
     virtual bool isNavigatorClipboard() const { return false; }
     virtual bool isNavigatorCookieConsent() const { return false; }
     virtual bool isNavigatorGamepad() const { return false; }
     virtual bool isUserMediaController() const { return false; }
     virtual bool isWorkerGlobalScopeCaches() const { return false; }
+    virtual bool isLocalDOMWindowMediaControls() const { return false; }
+    virtual bool isDocumentMediaElement() const { return false; }
+    virtual bool isGeolocationController() const { return false; }
+    virtual bool isWorkerGlobalScopeIndexedDatabase() const { return false; }
+    virtual bool isServiceWorkerRegistrationBackgroundFetchAPI() const { return false; }
 };
 
 template<typename T>

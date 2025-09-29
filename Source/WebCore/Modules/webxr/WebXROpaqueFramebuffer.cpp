@@ -71,18 +71,23 @@ static void createAndBindCompositorBuffer(GL& gl, WebXRExternalRenderbuffer& buf
     LOG(XR, "WebXROpaqueFramebuffer::createAndBindCompositorBuffer(): created and bound external image to renderbuffer");
 }
 
-static GL::ExternalImageSource makeExternalImageSource(const PlatformXR::FrameData::ExternalTexture& imageSource, WebCore::IntSize size)
+static GL::ExternalImageSource makeExternalImageSource(PlatformXR::FrameData::ExternalTexture& imageSource, WebCore::IntSize size)
 {
+#if OS(ANDROID)
     return GraphicsContextGLExternalImageSource {
-        .fds = imageSource.fds.map([](const UnixFileDescriptor& fd) {
-            return fd.duplicate();
-        }),
-        .strides = imageSource.strides,
-        .offsets = imageSource.offsets,
+        .hardwareBuffer = RefPtr { imageSource },
+        .size = size,
+    };
+#else
+    return GraphicsContextGLExternalImageSource {
+        .fds = WTFMove(imageSource.fds),
+        .strides = WTFMove(imageSource.strides),
+        .offsets = WTFMove(imageSource.offsets),
         .fourcc = imageSource.fourcc,
         .modifier = imageSource.modifier,
         .size = size
     };
+#endif // OS(ANDROID)
 }
 
 static void createAndBindTempBuffer(GL& gl, WebXRExternalRenderbuffer& buffer, GCGLenum internalFormat, IntSize size)
@@ -141,6 +146,8 @@ WebXROpaqueFramebuffer::~WebXROpaqueFramebuffer()
 
 void WebXROpaqueFramebuffer::startFrame(PlatformXR::FrameData::LayerData& data)
 {
+    ASSERT(!m_fenceFD);
+
     RefPtr gl = m_context->graphicsContextGL();
     if (!gl)
         return;
@@ -149,6 +156,8 @@ void WebXROpaqueFramebuffer::startFrame(PlatformXR::FrameData::LayerData& data)
     auto scopeExit = makeScopeExit([&]() {
         tracePoint(WebXRLayerStartFrameEnd);
     });
+
+    m_isForTesting = data.isForTesting;
 
     auto [textureTarget, textureTargetBinding] = gl->externalImageTextureBindingPoint();
 
@@ -225,7 +234,16 @@ void WebXROpaqueFramebuffer::endFrame()
         break;
     }
 
-    gl->finish();
+    if (auto sync = gl->createExternalSync({ })) {
+        m_fenceFD = gl->exportExternalSync(sync);
+        gl->deleteExternalSync(sync);
+    } else
+        gl->finish();
+}
+
+WTF::UnixFileDescriptor WebXROpaqueFramebuffer::takeFenceFD()
+{
+    return std::exchange(m_fenceFD, { });
 }
 
 bool WebXROpaqueFramebuffer::usesLayeredMode() const
@@ -265,7 +283,7 @@ void WebXROpaqueFramebuffer::blitShared(GraphicsContextGL& gl)
     ASSERT(!m_resolvedFBO, "blitShared should not require intermediate resolve buffers");
 
     auto displayAttachmentSet = reusableDisplayAttachmentsAtIndex(m_currentDisplayAttachmentIndex);
-    ASSERT(displayAttachmentSet);
+    ASSERT_IMPLIES(!m_isForTesting, displayAttachmentSet);
     if (!displayAttachmentSet) {
         RELEASE_LOG_ERROR(XR, "WebXROpaqueFramebuffer::blitShared(): unable to find display attachments at index: %zu", m_currentDisplayAttachmentIndex);
         return;
@@ -288,7 +306,7 @@ void WebXROpaqueFramebuffer::blitSharedToLayered(GraphicsContextGL& gl)
     ASSERT(drawFBO, "drawFBO shouldn't be the default framebuffer");
 
     auto displayAttachmentSet = reusableDisplayAttachmentsAtIndex(m_currentDisplayAttachmentIndex);
-    ASSERT(displayAttachmentSet);
+    ASSERT_IMPLIES(!m_isForTesting, displayAttachmentSet);
     if (!displayAttachmentSet) {
         RELEASE_LOG_ERROR(XR, "WebXROpaqueFramebuffer::blitSharedToLayered(): unable to find display attachments at index: %zu", m_currentDisplayAttachmentIndex);
         return;
@@ -394,7 +412,7 @@ bool WebXROpaqueFramebuffer::setupFramebuffer(GraphicsContextGL& gl, const Platf
 
         gl.bindFramebuffer(GL::FRAMEBUFFER, m_drawFramebuffer->object());
         bindAttachments(gl, m_drawAttachments);
-        ASSERT(gl.checkFramebufferStatus(GL::FRAMEBUFFER) == GL::FRAMEBUFFER_COMPLETE);
+        ASSERT_IMPLIES(!m_isForTesting, gl.checkFramebufferStatus(GL::FRAMEBUFFER) == GL::FRAMEBUFFER_COMPLETE);
     }
 
     // Calculate viewports of each eye
@@ -415,7 +433,7 @@ bool WebXROpaqueFramebuffer::setupFramebuffer(GraphicsContextGL& gl, const Platf
         ensure(gl, m_resolvedFBO);
         gl.bindFramebuffer(GL::FRAMEBUFFER, m_resolvedFBO);
         bindAttachments(gl, m_resolveAttachments);
-        ASSERT(gl.checkFramebufferStatus(GL::FRAMEBUFFER) == GL::FRAMEBUFFER_COMPLETE);
+        ASSERT(!m_isForTesting, gl.checkFramebufferStatus(GL::FRAMEBUFFER) == GL::FRAMEBUFFER_COMPLETE);
         if (gl.checkFramebufferStatus(GL::FRAMEBUFFER) != GL::FRAMEBUFFER_COMPLETE)
             return false;
     }
@@ -425,7 +443,7 @@ bool WebXROpaqueFramebuffer::setupFramebuffer(GraphicsContextGL& gl, const Platf
 
 const std::array<WebXRExternalAttachments, 2>* WebXROpaqueFramebuffer::reusableDisplayAttachments(const PlatformXR::FrameData::ExternalTextureData& textureData) const
 {
-    if (!textureData.colorTexture.fds.isEmpty())
+    if (textureData.colorTexture)
         return nullptr;
 
     auto reusableTextureIndex = textureData.reusableTextureIndex;
@@ -438,7 +456,7 @@ const std::array<WebXRExternalAttachments, 2>* WebXROpaqueFramebuffer::reusableD
     return &m_displayAttachmentsSets[reusableTextureIndex];
 }
 
-void WebXROpaqueFramebuffer::bindCompositorTexturesForDisplay(GraphicsContextGL& gl, const PlatformXR::FrameData::LayerData& layerData)
+void WebXROpaqueFramebuffer::bindCompositorTexturesForDisplay(GraphicsContextGL& gl, PlatformXR::FrameData::LayerData& layerData)
 {
     int layerCount = (m_displayLayout == PlatformXR::Layout::Layered) ? 2 : 1;
 
@@ -461,8 +479,8 @@ void WebXROpaqueFramebuffer::bindCompositorTexturesForDisplay(GraphicsContextGL&
 
     releaseDisplayAttachmentsAtIndex(m_currentDisplayAttachmentIndex);
     for (int layer = 0; layer < layerCount; ++layer) {
-        ASSERT(!layerData.textureData->colorTexture.fds.isEmpty());
-        if (layerData.textureData->colorTexture.fds.isEmpty())
+        ASSERT(layerData.textureData->colorTexture);
+        if (!layerData.textureData->colorTexture)
             return;
 
         auto colorTextureSource = makeExternalImageSource(layerData.textureData->colorTexture, framebufferSize);
@@ -471,7 +489,7 @@ void WebXROpaqueFramebuffer::bindCompositorTexturesForDisplay(GraphicsContextGL&
         if (!m_displayAttachmentsSets[m_currentDisplayAttachmentIndex][layer].colorBuffer.image)
             return;
 
-        if (!layerData.textureData->depthStencilBuffer.fds.isEmpty()) {
+        if (layerData.textureData->depthStencilBuffer) {
             auto depthStencilBufferSource = makeExternalImageSource(layerData.textureData->depthStencilBuffer, framebufferSize);
             createAndBindCompositorBuffer(gl, m_displayAttachmentsSets[m_currentDisplayAttachmentIndex][layer].depthStencilBuffer, GL::DEPTH24_STENCIL8, WTFMove(depthStencilBufferSource), layer);
         }

@@ -34,6 +34,7 @@
 #import "PDFPlugin.h"
 #import "PluginView.h"
 #import "PrintInfo.h"
+#import "SharedBufferReference.h"
 #import "TextAnimationController.h"
 #import "UserMediaCaptureManager.h"
 #import "WKAccessibilityWebPageObjectBase.h"
@@ -592,36 +593,6 @@ void WebPage::updateMockAccessibilityElementAfterCommittingLoad()
     [m_mockAccessibilityElement setHasMainFramePlugin:document ? document->isPluginDocument() : false];
 }
 
-void WebPage::pdfSnapshotAtSize(LocalFrame& localMainFrame, GraphicsContext& context, const IntRect& snapshotRect, SnapshotOptions options)
-{
-    Ref frameView = *localMainFrame.view();
-
-    auto rect = snapshotRect;
-    auto bitmapSize = rect.size();
-
-    int64_t remainingHeight = bitmapSize.height();
-    int64_t nextRectY = rect.y();
-    while (remainingHeight > 0) {
-        // PDFs have a per-page height limit of 200 inches at 72dpi.
-        // We'll export one PDF page at a time, up to that maximum height.
-        static const int64_t maxPageHeight = 72 * 200;
-        bitmapSize.setHeight(std::min(remainingHeight, maxPageHeight));
-        rect.setHeight(bitmapSize.height());
-        rect.setY(nextRectY);
-
-        context.beginPage(bitmapSize);
-        context.scale({ 1, -1 });
-        context.translate(0, -bitmapSize.height());
-
-        paintSnapshotAtSize(rect, bitmapSize, options, localMainFrame, frameView, context);
-
-        context.endPage();
-
-        nextRectY += bitmapSize.height();
-        remainingHeight -= maxPageHeight;
-    }
-}
-
 void WebPage::getProcessDisplayName(CompletionHandler<void(String&&)>&& completionHandler)
 {
 #if PLATFORM(MAC)
@@ -763,13 +734,9 @@ void WebPage::getPlatformEditorStateCommon(const LocalFrame& frame, EditorState&
         postLayoutData.selectionIsTransparentOrFullyClipped = selectionIsTransparentOrFullyClipped(selection);
 
 #if PLATFORM(IOS_FAMILY)
-    bool honorOverflowScrolling = m_page->settings().selectionHonorsOverflowScrolling();
-    if (enclosingFormControl || !honorOverflowScrolling)
+    if (enclosingFormControl || !m_page->settings().selectionHonorsOverflowScrolling())
         result.visualData->selectionClipRect = result.visualData->editableRootBounds;
-
-    if (honorOverflowScrolling)
-        computeEnclosingLayerID(result, selection);
-#endif // PLATFORM(IOS_FAMILY)
+#endif
 }
 
 void WebPage::getPDFFirstPageSize(WebCore::FrameIdentifier frameID, CompletionHandler<void(WebCore::FloatSize)>&& completionHandler)
@@ -1326,7 +1293,7 @@ static void drawPDFPage(PDFDocument *pdfDocument, CFIndex pageIndex, CGContextRe
     CGAffineTransform transform = CGContextGetCTM(context);
 
     for (PDFAnnotation *annotation in [pdfPage annotations]) {
-        if (![[annotation valueForAnnotationKey:get_PDFKit_PDFAnnotationKeySubtype()] isEqualToString:get_PDFKit_PDFAnnotationSubtypeLink()])
+        if (![[annotation valueForAnnotationKey:get_PDFKit_PDFAnnotationKeySubtypeSingleton()] isEqualToString:get_PDFKit_PDFAnnotationSubtypeLinkSingleton()])
             continue;
 
         NSURL *url = annotation.URL;
@@ -1358,18 +1325,16 @@ void WebPage::drawPDFDocument(CGContextRef context, PDFDocument *pdfDocument, co
     }
 }
 
-void WebPage::drawPagesToPDFFromPDFDocument(CGContextRef context, PDFDocument *pdfDocument, const PrintInfo& printInfo, uint32_t first, uint32_t count)
+void WebPage::drawPagesToPDFFromPDFDocument(GraphicsContext& context, PDFDocument *pdfDocument, const PrintInfo& printInfo, const WebCore::FloatRect& mediaBox, uint32_t first, uint32_t count)
 {
     NSUInteger pageCount = [pdfDocument pageCount];
     for (uint32_t page = first; page < first + count; ++page) {
         if (page >= pageCount)
             break;
 
-        RetainPtr pageInfo = adoptCF(CFDictionaryCreateMutable(0, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
-
-        CGPDFContextBeginPage(context, pageInfo.get());
-        drawPDFPage(pdfDocument, page, context, printInfo.pageSetupScaleFactor, CGSizeMake(printInfo.availablePaperWidth, printInfo.availablePaperHeight));
-        CGPDFContextEndPage(context);
+        context.beginPage(mediaBox);
+        drawPDFPage(pdfDocument, page, context.platformContext(), printInfo.pageSetupScaleFactor, CGSizeMake(printInfo.availablePaperWidth, printInfo.availablePaperHeight));
+        context.endPage();
     }
 }
 
@@ -1385,7 +1350,7 @@ void WebPage::computePagesForPrintingPDFDocument(WebCore::FrameIdentifier, const
     notImplemented();
 }
 
-void WebPage::drawPagesToPDFFromPDFDocument(CGContextRef, PDFDocument *, const PrintInfo&, uint32_t, uint32_t)
+void WebPage::drawPagesToPDFFromPDFDocument(GraphicsContext&, PDFDocument *, const PrintInfo&, const WebCore::FloatRect&, uint32_t, uint32_t)
 {
     notImplemented();
 }
@@ -1426,14 +1391,18 @@ BoxSideSet WebPage::sidesRequiringFixedContainerEdges() const
     return sides;
 }
 
-void WebPage::getWebArchives(CompletionHandler<void(HashMap<WebCore::FrameIdentifier, Ref<WebCore::LegacyWebArchive>>&&)>&& completionHandler)
+void WebPage::getWebArchivesForFrames(const Vector<WebCore::FrameIdentifier>& frameIdentifiers, CompletionHandler<void(HashMap<WebCore::FrameIdentifier, Ref<WebCore::LegacyWebArchive>>&&)>&& completionHandler)
 {
     if (!m_page)
         return completionHandler({ });
 
     HashMap<WebCore::FrameIdentifier, Ref<LegacyWebArchive>> result;
-    for (RefPtr<Frame> frame = m_mainFrame->coreFrame(); frame; frame = frame->tree().traverseNext()) {
-        RefPtr localFrame = dynamicDowncast<LocalFrame>(frame);
+    for (auto& frameIdentifier : frameIdentifiers) {
+        RefPtr frame = WebFrame::webFrame(frameIdentifier);
+        if (!frame)
+            continue;
+
+        RefPtr localFrame = frame->coreLocalFrame();
         if (!localFrame)
             continue;
 
@@ -1451,6 +1420,12 @@ void WebPage::getWebArchives(CompletionHandler<void(HashMap<WebCore::FrameIdenti
     completionHandler(WTFMove(result));
 }
 
+void WebPage::getWebArchiveData(CompletionHandler<void(const std::optional<IPC::SharedBufferReference>&)>&& completionHandler)
+{
+    RetainPtr<CFDataRef> data = m_mainFrame->webArchiveData(nullptr, nullptr);
+    completionHandler(IPC::SharedBufferReference(SharedBuffer::create(data.get())));
+}
+
 void WebPage::processSystemWillSleep() const
 {
     if (RefPtr manager = mediaSessionManagerIfExists())
@@ -1461,6 +1436,29 @@ void WebPage::processSystemDidWake() const
 {
     if (RefPtr manager = mediaSessionManagerIfExists())
         manager->processSystemDidWake();
+}
+
+NSObject *WebPage::accessibilityObjectForMainFramePlugin()
+{
+#if ENABLE(PDF_PLUGIN)
+    if (!m_page)
+        return nil;
+
+    if (RefPtr pluginView = mainFramePlugIn())
+        return pluginView->accessibilityObject();
+#endif
+
+    return nil;
+}
+
+bool WebPage::shouldFallbackToWebContentAXObjectForMainFramePlugin() const
+{
+#if ENABLE(PDF_PLUGIN)
+    RefPtr pluginView = mainFramePlugIn();
+    return pluginView && pluginView->isPresentingLockedContent();
+#else
+    return false;
+#endif
 }
 
 } // namespace WebKit

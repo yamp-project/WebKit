@@ -30,6 +30,7 @@
 
 #if ENABLE(GEOLOCATION)
 
+#include "ContextDestructionObserverInlines.h"
 #include "Document.h"
 #include "DocumentInlines.h"
 #include "EventLoop.h"
@@ -44,6 +45,7 @@
 #include "Page.h"
 #include "PermissionsPolicy.h"
 #include "ScriptExecutionContextInlines.h"
+#include "ScriptWrappableInlines.h"
 #include "SecurityOrigin.h"
 #include <JavaScriptCore/ConsoleTypes.h>
 #include <wtf/Ref.h>

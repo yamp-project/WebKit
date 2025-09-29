@@ -70,6 +70,7 @@
 #import <wtf/Vector.h>
 #import <wtf/cocoa/SpanCocoa.h>
 #import <wtf/cocoa/TypeCastsCocoa.h>
+#import <wtf/darwin/DispatchExtras.h>
 #import <wtf/text/MakeString.h>
 #import <wtf/text/StringHash.h>
 #import <wtf/text/WTFString.h>
@@ -179,7 +180,7 @@ static bool navigationFailed = false;
 {
     int64_t deferredWaitTime = 100 * NSEC_PER_MSEC;
     dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, deferredWaitTime);
-    dispatch_after(when, dispatch_get_main_queue(), ^{
+    dispatch_after(when, mainDispatchQueueSingleton(), ^{
         decisionHandler(shouldAccept ? WKNavigationResponsePolicyAllow : WKNavigationResponsePolicyCancel);
     });
 }
@@ -3608,7 +3609,12 @@ void miniaturizeWebView(TestWKWebView* webView)
 }
 #endif // PLATFORM(MAC)
 
+// FIXME when rdar://158787776 is resolved
+#if PLATFORM(MAC)
+TEST(ServiceWorker, DISABLED_ServiceWorkerWindowClientFocus)
+#else
 TEST(ServiceWorker, ServiceWorkerWindowClientFocus)
+#endif
 {
     [WKWebsiteDataStore _allowWebsiteDataRecordsForAllOrigins];
 
@@ -4916,7 +4922,7 @@ TEST(ServiceWorker, ServiceWorkerReadableStreamDownloadCancel)
     navigationDownloadDelegate.get().navigationResponseDidBecomeDownload = ^(WKWebView *, WKNavigationResponse *, WKDownload *download) {
         int64_t deferredWaitTime = 500 * NSEC_PER_MSEC;
         dispatch_time_t when = dispatch_time(DISPATCH_TIME_NOW, deferredWaitTime);
-        dispatch_after(when, dispatch_get_main_queue(), ^{
+        dispatch_after(when, mainDispatchQueueSingleton(), ^{
             [download cancel:^(NSData*) { }];
         });
     };

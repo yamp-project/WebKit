@@ -616,14 +616,9 @@ FloatRect SVGSVGElement::currentViewBoxRect() const
     if (!isEmbeddedThroughSVGImage(checkedRenderer().get()))
         return { };
 
-    auto intrinsicWidth = this->intrinsicWidth();
-    auto intrinsicHeight = this->intrinsicHeight();
-    if (!intrinsicWidth.isFixed() || !intrinsicHeight.isFixed())
-        return { };
-
     // If no viewBox is specified but non-relative width/height values, then we
     // should always synthesize a viewBox if we're embedded through a SVGImage.
-    return { 0, 0, floatValueForLength(intrinsicWidth, 0), floatValueForLength(intrinsicHeight, 0) };
+    return { 0, 0, intrinsicWidth(), intrinsicHeight() };
 }
 
 FloatSize SVGSVGElement::currentViewportSizeExcludingZoom() const
@@ -651,7 +646,7 @@ FloatSize SVGSVGElement::currentViewportSizeExcludingZoom() const
     if (!(hasIntrinsicWidth() && hasIntrinsicHeight()))
         return { };
 
-    return FloatSize(floatValueForLength(intrinsicWidth(), 0), floatValueForLength(intrinsicHeight(), 0));
+    return { intrinsicWidth(), intrinsicHeight() };
 }
 
 bool SVGSVGElement::hasIntrinsicWidth() const
@@ -664,22 +659,22 @@ bool SVGSVGElement::hasIntrinsicHeight() const
     return height().lengthType() != SVGLengthType::Percentage;
 }
 
-Length SVGSVGElement::intrinsicWidth() const
+float SVGSVGElement::intrinsicWidth() const
 {
     if (width().lengthType() == SVGLengthType::Percentage)
-        return Length(0, LengthType::Fixed);
+        return 0;
 
     SVGLengthContext lengthContext(this);
-    return Length(width().value(lengthContext), LengthType::Fixed);
+    return width().value(lengthContext);
 }
 
-Length SVGSVGElement::intrinsicHeight() const
+float SVGSVGElement::intrinsicHeight() const
 {
     if (height().lengthType() == SVGLengthType::Percentage)
-        return Length(0, LengthType::Fixed);
+        return 0;
 
     SVGLengthContext lengthContext(this);
-    return Length(height().value(lengthContext), LengthType::Fixed);
+    return height().value(lengthContext);
 }
 
 AffineTransform SVGSVGElement::viewBoxToViewTransform(float viewWidth, float viewHeight) const
@@ -700,7 +695,11 @@ RefPtr<SVGViewElement> SVGSVGElement::findViewAnchor(StringView fragmentIdentifi
 
 SVGSVGElement* SVGSVGElement::findRootAnchor(const SVGViewElement* viewElement) const
 {
-    return dynamicDowncast<SVGSVGElement>(SVGLocatable::nearestViewportElement(viewElement));
+    if (!viewElement)
+        return nullptr;
+
+    auto& document = viewElement->document();
+    return dynamicDowncast<SVGSVGElement>(document.documentElement());
 }
 
 SVGSVGElement* SVGSVGElement::findRootAnchor(StringView fragmentIdentifier) const
@@ -743,9 +742,9 @@ bool SVGSVGElement::scrollToFragment(StringView fragmentIdentifier)
     }
 
     // Spec: If the SVG fragment identifier addresses a "view" element within an SVG document (e.g., MyDrawing.svg#MyView)
-    // then the closest ancestor "svg" element is displayed in the viewport.
+    // then the root 'svg' element is displayed in the SVG viewport.
     // Any view specification attributes included on the given "view" element override the corresponding view specification
-    // attributes on the closest ancestor "svg" element.
+    // attributes on the root 'svg' element.
     if (RefPtr viewElement = findViewAnchor(fragmentIdentifier)) {
         if (RefPtr rootElement = findRootAnchor(viewElement.get())) {
             if (rootElement->m_currentViewElement) {

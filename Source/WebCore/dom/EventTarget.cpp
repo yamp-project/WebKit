@@ -32,7 +32,7 @@
 #include "config.h"
 #include "EventTarget.h"
 
-#include "AddEventListenerOptions.h"
+#include "AddEventListenerOptionsInlines.h"
 #include "DOMWrapperWorld.h"
 #include "EventNames.h"
 #include "EventPath.h"
@@ -76,6 +76,11 @@ EventTarget::~EventTarget()
     // Explicitly tearing down since WeakPtrImpl can be alive longer than EventTarget.
     if (auto* eventTargetData = this->eventTargetData())
         eventTargetData->clear();
+}
+
+RefPtr<ScriptExecutionContext> EventTarget::protectedScriptExecutionContext() const
+{
+    return scriptExecutionContext();
 }
 
 bool EventTarget::isPaymentRequest() const
@@ -401,7 +406,7 @@ const EventListenerVector& EventTarget::eventListeners(const AtomString& eventTy
 
 void EventTarget::removeAllEventListeners()
 {
-    Ref threadData = threadGlobalData();
+    Ref threadData = threadGlobalDataSingleton();
     RELEASE_ASSERT(!threadData->isInRemoveAllEventListeners());
 
     threadData->setIsInRemoveAllEventListeners(true);

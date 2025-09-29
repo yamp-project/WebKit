@@ -156,13 +156,14 @@ private:
 #endif
     void whenReady(CompletionHandler<void(CaptureSourceError&&)>&&) final;
 
+    Ref<MockRealtimeVideoSource> protectedSource() const { return m_source; }
+
     void readyTimerFired();
 
     Ref<MockRealtimeVideoSource> m_source;
     RealtimeMediaSourceSettings m_settings;
     Timer m_readyTimer;
     bool m_isRunning { false };
-    bool m_didReceiveVideoFrame { false };
     CompletionHandler<void(CaptureSourceError&&)> m_whenReadyCallback;
 };
 
@@ -181,7 +182,7 @@ bool MockDisplayCapturer::start()
     ASSERT(!m_isRunning);
 
     m_isRunning = true;
-    m_source->start();
+    protectedSource()->start();
     return true;
 }
 
@@ -190,7 +191,7 @@ void MockDisplayCapturer::stop()
     ASSERT(!m_whenReadyCallback);
 
     m_isRunning = false;
-    m_source->stop();
+    protectedSource()->stop();
 }
 
 void MockDisplayCapturer::whenReady(CompletionHandler<void(CaptureSourceError&&)>&& callback)
@@ -217,7 +218,7 @@ void MockDisplayCapturer::commitConfiguration(const RealtimeMediaSourceSettings&
 
 DisplayCaptureSourceCocoa::DisplayFrameType MockDisplayCapturer::generateFrame()
 {
-    if (auto* imageBuffer = m_source->imageBuffer())
+    if (RefPtr imageBuffer = protectedSource()->imageBuffer())
         return imageBuffer->copyNativeImage();
     return { };
 }
@@ -239,17 +240,19 @@ IntSize MockDisplayCapturer::intrinsicSize() const
 
 void MockDisplayCapturer::triggerMockCaptureConfigurationChange()
 {
-    auto deviceId = m_source->persistentID();
+    Ref source = m_source;
+    auto deviceId = source->persistentID();
     auto device = MockRealtimeMediaSourceCenter::mockDeviceWithPersistentID(deviceId.startsWith("WINDOW"_s) ? "WINDOW-2"_s : "SCREEN-2"_s);
     ASSERT(device);
     if (!device)
         return;
 
-    bool isStarted = m_source->isProducingData();
-    auto pageIdentifier = m_source->pageIdentifier();
-    m_source = MockRealtimeVideoSourceMac::createForMockDisplayCapturer(String { device->persistentId }, AtomString { device->label }, MediaDeviceHashSalts { "persistent"_s, "ephemeral"_s }, pageIdentifier);
+    bool isStarted = source->isProducingData();
+    auto pageIdentifier = source->pageIdentifier();
+    source = MockRealtimeVideoSourceMac::createForMockDisplayCapturer(String { device->persistentId }, AtomString { device->label }, MediaDeviceHashSalts { "persistent"_s, "ephemeral"_s }, pageIdentifier);
+    m_source = source.copyRef();
     if (isStarted)
-        m_source->start();
+        source->start();
 
     configurationChanged();
 }

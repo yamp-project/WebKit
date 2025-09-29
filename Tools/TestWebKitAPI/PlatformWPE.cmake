@@ -39,6 +39,7 @@ list(APPEND TestWebCore_SOURCES
     Tests/WebCore/UserAgentQuirks.cpp
 
     Tests/WebCore/glib/Damage.cpp
+    Tests/WebCore/glib/GraphicsContextGLTextureMapper.cpp
 
     Tests/WebCore/gstreamer/GStreamerTest.cpp
     Tests/WebCore/gstreamer/GstElementHarness.cpp
@@ -84,9 +85,6 @@ if (ENABLE_WPE_PLATFORM)
     list(APPEND TestWebKit_PRIVATE_INCLUDE_DIRECTORIES
         ${WPEPlatform_DERIVED_SOURCES_DIR}
         ${WEBKIT_DIR}/WPEPlatform
-    )
-    list(APPEND TestWebKit_PRIVATE_LIBRARIES
-        WPEPlatform-${WPE_API_VERSION}
     )
 endif ()
 

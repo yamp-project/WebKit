@@ -31,8 +31,8 @@
 /* These need to be included first. */
 #include "pas_thread.h"
 #if defined(__has_include)
-#if __has_include(<System/pthread_machdep.h>)
-#include <System/pthread_machdep.h>
+#if __has_include(<pthread/tsd_private.h>)
+#include <pthread/tsd_private.h>
 #define PAS_HAVE_PTHREAD_MACHDEP_H 1
 #else
 #define PAS_HAVE_PTHREAD_MACHDEP_H 0
@@ -202,6 +202,9 @@ PAS_BEGIN_EXTERN_C;
 #ifndef PAS_PROFILE
 #define PAS_PROFILE(kind, ...) PAS_UNUSED_V(__VA_ARGS__)
 #endif
+#ifndef PAS_SHOULD_PROFILE_BASIC_HEAP_PAGE
+#define PAS_SHOULD_PROFILE_BASIC_HEAP_PAGE(size_category) (false)
+#endif
 
 static PAS_ALWAYS_INLINE void pas_zero_memory(void* memory, size_t size)
 {
@@ -283,6 +286,8 @@ static PAS_ALWAYS_INLINE void pas_assertion_failed_noreturn_silencer(
     pas_assertion_failed(filename, line, function, expression);
 }
 
+PAS_IGNORE_WARNINGS_END
+
 #if PAS_OS(DARWIN) && PAS_VA_OPT_SUPPORTED
 
 /* FIXME: Consider whether it makes sense to capture the filename, function, and expression
@@ -310,6 +315,8 @@ PAS_NEVER_INLINE void pas_report_assertion_failed(
 #define PAS_REPORT_ASSERTION_FAILED(filename, line, function, expression) \
     PAS_UNUSED_ASSERTION_FAILED_ARGS(filename, line, function, expression)
 #endif
+
+PAS_IGNORE_WARNINGS_BEGIN("missing-noreturn")
 
 static PAS_ALWAYS_INLINE void pas_assertion_failed_noreturn_silencer1(
     const char* filename, int line, const char* function, const char* expression, uint64_t misc1)

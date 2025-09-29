@@ -25,15 +25,17 @@
 #pragma once
 
 #include <WebCore/CSSPrimitiveKeywordList.h>
+#include <WebCore/CalculationValue.h>
 #include <WebCore/StyleLengthWrapperData.h>
 #include <WebCore/StylePrimitiveNumericTypes.h>
+#include <wtf/StdLibExtras.h>
 #include <wtf/text/TextStream.h>
 
 namespace WebCore {
 namespace Style {
 
 template<typename, CSS::PrimitiveKeyword...> struct LengthWrapperBase;
-template<typename> struct MinimumEvaluation;
+template<typename, typename> struct MinimumEvaluation;
 
 // Transitionary type acting as a `Style::PrimitiveNumericOrKeyword<...>` but implemented by wrapping a `LengthWrapperData`.
 template<typename Numeric, CSS::PrimitiveKeyword... Ks> struct LengthWrapperBase {
@@ -67,8 +69,8 @@ template<typename Numeric, CSS::PrimitiveKeyword... Ks> struct LengthWrapperBase
 
     LengthWrapperBase(CSS::ValidKeywordForList<Keywords> auto keyword) : m_value(Keywords::offsetForKeyword(keyword)) { }
 
-    LengthWrapperBase(Fixed fixed) : m_value(indexForFixed, fixed.value) { }
-    LengthWrapperBase(Fixed fixed, bool hasQuirk) : m_value(indexForFixed, fixed.value, hasQuirk) { }
+    LengthWrapperBase(Fixed fixed) : m_value(indexForFixed, fixed.unresolvedValue()) { }
+    LengthWrapperBase(Fixed fixed, bool hasQuirk) : m_value(indexForFixed, fixed.unresolvedValue(), hasQuirk) { }
     LengthWrapperBase(Percentage percent) : m_value(indexForPercentage, percent.value) { }
     LengthWrapperBase(Calc&& calc) : m_value(indexForCalc, calc.protectedCalculation()) { }
     LengthWrapperBase(Specified&& specified) : m_value(toData(specified)) { }
@@ -145,15 +147,15 @@ template<typename Numeric, CSS::PrimitiveKeyword... Ks> struct LengthWrapperBase
 
 private:
     template<typename> friend struct ToPlatform;
-    template<typename> friend struct Evaluation;
-    template<typename> friend struct MinimumEvaluation;
+    template<typename, typename> friend struct Evaluation;
+    template<typename, typename> friend struct MinimumEvaluation;
     template<typename> friend struct Blending;
 
     static LengthWrapperData toData(const Specified& specified)
     {
         return WTF::switchOn(specified,
             [](const Fixed& fixed) {
-                return LengthWrapperData { indexForFixed, fixed.value };
+                return LengthWrapperData { indexForFixed, fixed.unresolvedValue() };
             },
             [](const Percentage& percentage) {
                 return LengthWrapperData { indexForPercentage, percentage.value };
@@ -279,42 +281,59 @@ template<typename T> concept LengthWrapperBaseDerived = WTF::IsBaseOfTemplate<Le
 
 // MARK: - Evaluation
 
-template<LengthWrapperBaseDerived T> struct Evaluation<T> {
-    auto operator()(const T& value, NOESCAPE const Invocable<LayoutUnit()> auto& lazyMaximumValueFunctor) -> LayoutUnit
+template<LengthWrapperBaseDerived T, typename Result> struct Evaluation<T, Result> {
+    auto operator()(const T& value, NOESCAPE const Invocable<Result()> auto& lazyMaximumValueFunctor, ZoomNeeded token) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Default)
     {
-        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), lazyMaximumValueFunctor);
+        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<Result, Result>(value.evaluationKind(), lazyMaximumValueFunctor, token);
     }
-    auto operator()(const T& value, NOESCAPE const Invocable<float()> auto& lazyMaximumValueFunctor) -> float
+    auto operator()(const T& value, Result maximumValue, ZoomNeeded token) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Default)
     {
-        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<float, float>(value.evaluationKind(), lazyMaximumValueFunctor);
+        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<Result, Result>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return maximumValue; }, token);
     }
-    auto operator()(const T& value, LayoutUnit maximumValue) -> LayoutUnit
+
+    auto operator()(const T& value, NOESCAPE const Invocable<Result()> auto& lazyMaximumValueFunctor, float zoom) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Unzoomed)
     {
-        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return maximumValue; });
+        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<Result, Result>(value.evaluationKind(), lazyMaximumValueFunctor, zoom);
     }
-    auto operator()(const T& value, float maximumValue) -> float
+    auto operator()(const T& value, Result maximumValue, float zoom) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Unzoomed)
     {
-        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<float, float>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return maximumValue; });
+        return value.m_value.template valueForLengthWrapperDataWithLazyMaximum<Result, Result>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return maximumValue; }, zoom);
     }
 };
 
-template<typename StyleType, typename Reference> decltype(auto) evaluateMinimum(const StyleType& value, NOESCAPE Reference&& reference)
-{
-    return MinimumEvaluation<StyleType>{}(value, std::forward<Reference>(reference));
-}
+template<typename Result> struct EvaluationMinimumInvoker {
+    template<typename StyleType, typename Reference, typename Zoom> decltype(auto) operator()(const StyleType& value, NOESCAPE Reference&& reference, Zoom&& zoom) const
+    {
+        return MinimumEvaluation<StyleType, Result> { }(value, std::forward<Reference>(reference), std::forward<Zoom>(zoom));
+    }
+};
+template<typename Result> inline constexpr EvaluationMinimumInvoker<Result> evaluateMinimum{};
 
-template<LengthWrapperBaseDerived T> struct MinimumEvaluation<T> {
-    auto operator()(const T& value, NOESCAPE const Invocable<LayoutUnit()> auto& lazyMaximumValueFunctor) -> LayoutUnit
+template<LengthWrapperBaseDerived T, typename Result> struct MinimumEvaluation<T, Result> {
+    auto operator()(const T& value, NOESCAPE const Invocable<Result()> auto& lazyMaximumValueFunctor, ZoomNeeded token) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Default)
     {
-        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), lazyMaximumValueFunctor);
+        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), lazyMaximumValueFunctor, token);
     }
-    auto operator()(const T& value, LayoutUnit maximumValue) -> LayoutUnit
+    auto operator()(const T& value, Result maximumValue, ZoomNeeded token) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Default)
     {
-        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return maximumValue; });
+        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return LayoutUnit(maximumValue); }, token);
     }
-    auto operator()(const T& value, float maximumValue) -> float
+
+    auto operator()(const T& value, NOESCAPE const Invocable<Result()> auto& lazyMaximumValueFunctor, float zoom) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Unzoomed)
     {
-        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return LayoutUnit(maximumValue); });
+        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), lazyMaximumValueFunctor, zoom);
+    }
+    auto operator()(const T& value, Result maximumValue, float zoom) -> Result
+        requires (T::Fixed::range.zoomOptions == CSS::RangeZoomOptions::Unzoomed)
+    {
+        return value.m_value.template minimumValueForLengthWrapperDataWithLazyMaximum<LayoutUnit, LayoutUnit>(value.evaluationKind(), [&] ALWAYS_INLINE_LAMBDA { return LayoutUnit(maximumValue); }, zoom);
     }
 };
 

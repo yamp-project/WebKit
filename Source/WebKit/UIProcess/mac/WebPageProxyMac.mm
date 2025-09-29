@@ -61,6 +61,7 @@
 #import <WebCore/DragItem.h>
 #import <WebCore/GraphicsLayer.h>
 #import <WebCore/LegacyNSPasteboardTypes.h>
+#import <WebCore/LocalizedStrings.h>
 #import <WebCore/Pasteboard.h>
 #import <WebCore/Quirks.h>
 #import <WebCore/SharedBuffer.h>
@@ -180,8 +181,8 @@ void WebPageProxy::searchTheWeb(const String& string)
     [pasteboard clearContents];
     if (sessionID().isEphemeral())
         [pasteboard _setExpirationDate:[NSDate dateWithTimeIntervalSinceNow:pasteboardExpirationDelay.seconds()]];
-    [pasteboard addTypes:@[legacyStringPasteboardType()] owner:nil];
-    [pasteboard setString:string.createNSString().get() forType:legacyStringPasteboardType()];
+    [pasteboard addTypes:@[legacyStringPasteboardTypeSingleton()] owner:nil];
+    [pasteboard setString:string.createNSString().get() forType:legacyStringPasteboardTypeSingleton()];
 
     NSPerformService(@"Search With %WebSearchProvider@", pasteboard.get());
 }
@@ -509,16 +510,31 @@ CALayer *WebPageProxy::acceleratedCompositingRootLayer() const
     return pageClient ? pageClient->acceleratedCompositingRootLayer() : nullptr;
 }
 
+RetainPtr<CALayer> WebPageProxy::protectedAcceleratedCompositingRootLayer() const
+{
+    return acceleratedCompositingRootLayer();
+}
+
 CALayer *WebPageProxy::headerBannerLayer() const
 {
     RefPtr pageClient = this->pageClient();
     return pageClient ? pageClient->headerBannerLayer() : nullptr;
 }
 
+RetainPtr<CALayer> WebPageProxy::protectedHeaderBannerLayer() const
+{
+    return headerBannerLayer();
+}
+
 CALayer *WebPageProxy::footerBannerLayer() const
 {
     RefPtr pageClient = this->pageClient();
     return pageClient ? pageClient->footerBannerLayer() : nullptr;
+}
+
+RetainPtr<CALayer> WebPageProxy::protectedFooterBannerLayer() const
+{
+    return footerBannerLayer();
 }
 
 int WebPageProxy::headerBannerHeight() const
@@ -670,7 +686,7 @@ void WebPageProxy::showPDFContextMenu(const WebKit::PDFContextMenu& contextMenu,
 
     if (RetainPtr selectedMenuItem = [menuTarget selectedMenuItem]) {
         NSInteger tag = selectedMenuItem.get().tag;
-        if (contextMenu.openInPreviewTag && *contextMenu.openInPreviewTag == tag)
+        if (contextMenu.openInDefaultViewerTag == tag)
             pdfOpenWithPreview(identifier, frameID);
         return completionHandler(tag);
     }
@@ -723,6 +739,11 @@ NSWindow *WebPageProxy::platformWindow()
 {
     RefPtr pageClient = m_pageClient.get();
     return pageClient ? pageClient->platformWindow() : nullptr;
+}
+
+RetainPtr<NSWindow> WebPageProxy::protectedPlatformWindow()
+{
+    return platformWindow();
 }
 
 void WebPageProxy::rootViewToWindow(const WebCore::IntRect& viewRect, WebCore::IntRect& windowRect)
@@ -834,6 +855,7 @@ void WebPageProxy::pdfSaveToPDF(PDFPluginIdentifier identifier, WebCore::FrameId
     } });
 }
 
+// FIXME: This is a misnomer since we conflate Preview.app with the default PDF viewer. Consider renaming.
 void WebPageProxy::pdfOpenWithPreview(PDFPluginIdentifier identifier, WebCore::FrameIdentifier frameID)
 {
     sendWithAsyncReplyToProcessContainingFrame(frameID, Messages::WebPage::OpenPDFWithPreview(identifier), Messages::WebPage::OpenPDFWithPreview::Reply { [this, protectedThis = Ref { *this }](String&& suggestedFilename, std::optional<FrameInfoData>&& frameInfo, std::span<const uint8_t> data) {
@@ -914,10 +936,10 @@ void WebPageProxy::handleContextMenuLookUpImage()
 
 void WebPageProxy::showImageInQuickLookPreviewPanel(ShareableBitmap& imageBitmap, const String& tooltip, const URL& imageURL, QuickLookPreviewActivity activity)
 {
-    if (!PAL::isQuickLookUIFrameworkAvailable() || !PAL::getQLPreviewPanelClass() || ![PAL::getQLItemClass() instancesRespondToSelector:@selector(initWithDataProvider:contentType:previewTitle:)])
+    if (!PAL::isQuickLookUIFrameworkAvailable() || !PAL::getQLPreviewPanelClassSingleton() || ![PAL::getQLItemClassSingleton() instancesRespondToSelector:@selector(initWithDataProvider:contentType:previewTitle:)])
         return;
 
-    auto image = imageBitmap.makeCGImage();
+    RetainPtr image = imageBitmap.createPlatformImage(DontCopyBackingStore);
     if (!image)
         return;
 
@@ -938,7 +960,7 @@ void WebPageProxy::showImageInQuickLookPreviewPanel(ShareableBitmap& imageBitmap
     if (RefPtr pageClient = this->pageClient())
         pageClient->makeFirstResponder();
 
-    RetainPtr previewPanel = [PAL::getQLPreviewPanelClass() sharedPreviewPanel];
+    RetainPtr previewPanel = [PAL::getQLPreviewPanelClassSingleton() sharedPreviewPanel];
     [previewPanel makeKeyAndOrderFront:nil];
 
     if (![m_quickLookPreviewController isControlling:previewPanel.get()]) {

@@ -238,6 +238,9 @@ const Scope& Scope::forNode(const Node& node)
 
 Scope* Scope::forOrdinal(Element& element, ScopeOrdinal ordinal)
 {
+    if (CheckedPtr pseudoElement = dynamicDowncast<PseudoElement>(element))
+        return forOrdinal(*pseudoElement->hostElement(), ordinal);
+
     if (ordinal == ScopeOrdinal::Element)
         return &forNode(element);
     if (ordinal == ScopeOrdinal::Shadow) {
@@ -933,9 +936,11 @@ bool Scope::isForUserAgentShadowTree() const
 
 bool Scope::invalidateForLayoutDependencies(LayoutDependencyUpdateContext& context)
 {
-    return invalidateForContainerDependencies(context)
-        || invalidateForAnchorDependencies(context)
-        || invalidateForPositionTryFallbacks(context);
+    auto didInvalidate = false;
+    didInvalidate |= invalidateForContainerDependencies(context);
+    didInvalidate |= invalidateForAnchorDependencies(context);
+    didInvalidate |= invalidateForPositionTryFallbacks(context);
+    return didInvalidate;
 }
 
 bool Scope::invalidateForContainerDependencies(LayoutDependencyUpdateContext& context)
@@ -1100,6 +1105,13 @@ Element* hostForScopeOrdinal(const Element& element, ScopeOrdinal scopeOrdinal)
     for (auto scopeDepth = ScopeOrdinal::ContainingHost; host && scopeDepth != scopeOrdinal; --scopeDepth)
         host = host->shadowHost();
     return host;
+}
+
+CheckedPtr<const Scope> Scope::hostScope() const
+{
+    if (!m_shadowRoot || !m_shadowRoot->host())
+        return nullptr;
+    return &forNode(*m_shadowRoot->host());
 }
 
 void Scope::updateAnchorPositioningStateAfterStyleResolution()

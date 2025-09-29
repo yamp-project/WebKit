@@ -55,8 +55,11 @@ public:
     void setAllowAutofill() { m_allowAutofill = true; }
     bool allowAutofill() const { return m_allowAutofill; }
 
-    void setNodeInfoEnabled() { m_nodeInfoEnabled = true; }
-    bool nodeInfoEnabled() const { return m_nodeInfoEnabled; }
+    bool allowsJSHandleCreation() const { return m_allowsJSHandleCreation; }
+    void setAllowsJSHandleCreation() { m_allowsJSHandleCreation = true; }
+
+    void setAllowNodeSerialization() { m_allowNodeSerialization = true; }
+    bool allowNodeSerialization() const { return m_allowNodeSerialization; }
 
     void setAllowElementUserInfo() { m_allowElementUserInfo = true; }
     bool allowElementUserInfo() const { return m_allowElementUserInfo; }
@@ -71,6 +74,12 @@ public:
 
     void disableLegacyOverrideBuiltInsBehavior() { m_shouldDisableLegacyOverrideBuiltInsBehavior = true; }
     bool shouldDisableLegacyOverrideBuiltInsBehavior() const { return m_shouldDisableLegacyOverrideBuiltInsBehavior; }
+
+    void setAllowPostLegacySynchronousMessage() { m_allowPostLegacySynchronousMessage = true; }
+    bool allowPostLegacySynchronousMessage() const { return m_allowPostLegacySynchronousMessage; }
+
+    void setIsMediaControls() { m_isMediaControls = true; }
+    bool isMediaControls() const { return m_isMediaControls; }
 
     DOMObjectWrapperMap& wrappers() { return m_wrappers; }
 
@@ -93,12 +102,15 @@ private:
     String m_name;
     Type m_type { Type::Internal };
 
-    bool m_allowAutofill { false };
-    bool m_allowElementUserInfo { false };
-    bool m_shadowRootIsAlwaysOpen { false };
-    bool m_closedShadowRootIsExposedForExtensions { false };
-    bool m_shouldDisableLegacyOverrideBuiltInsBehavior { false };
-    bool m_nodeInfoEnabled { false };
+    bool m_allowAutofill : 1 { false };
+    bool m_allowElementUserInfo : 1 { false };
+    bool m_shadowRootIsAlwaysOpen : 1 { false };
+    bool m_closedShadowRootIsExposedForExtensions : 1 { false };
+    bool m_shouldDisableLegacyOverrideBuiltInsBehavior : 1 { false };
+    bool m_allowsJSHandleCreation : 1 { false };
+    bool m_allowNodeSerialization : 1 { false };
+    bool m_allowPostLegacySynchronousMessage : 1 { false };
+    bool m_isMediaControls : 1 { false };
 };
 
 DOMWrapperWorld& normalWorld(JSC::VM&);
@@ -110,6 +122,7 @@ inline DOMWrapperWorld& pluginWorldSingleton() { return mainThreadNormalWorldSin
 
 DOMWrapperWorld& currentWorld(JSC::JSGlobalObject&);
 DOMWrapperWorld& worldForDOMObject(JSC::JSObject&);
+Ref<DOMWrapperWorld> protectedWorldForDOMObject(JSC::JSObject&);
 
 // Helper function for code paths that must not share objects across isolated DOM worlds.
 bool isWorldCompatible(JSC::JSGlobalObject&, JSC::JSValue);
@@ -122,6 +135,11 @@ inline DOMWrapperWorld& currentWorld(JSC::JSGlobalObject& lexicalGlobalObject)
 inline DOMWrapperWorld& worldForDOMObject(JSC::JSObject& object)
 {
     return JSC::jsCast<JSDOMGlobalObject*>(object.globalObject())->world();
+}
+
+inline Ref<DOMWrapperWorld> protectedWorldForDOMObject(JSC::JSObject& object)
+{
+    return worldForDOMObject(object);
 }
 
 inline bool isWorldCompatible(JSC::JSGlobalObject& lexicalGlobalObject, JSC::JSValue value)

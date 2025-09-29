@@ -30,6 +30,7 @@
 #include "DebuggerPrimitives.h"
 #include "FunctionExecutable.h"
 #include "JSCellInlines.h"
+#include "JSFunctionInlines.h"
 #include <wtf/text/MakeString.h>
 
 namespace JSC {
@@ -52,6 +53,16 @@ StackFrame::StackFrame(VM& vm, JSCell* owner, JSCell* callee, CodeBlock* codeBlo
 {
 }
 
+StackFrame::StackFrame(VM& vm, JSCell* owner, JSCell* callee, CodeBlock* codeBlock, BytecodeIndex bytecodeIndex, bool isAsyncFrame)
+    : m_frameData(JSFrameData {
+        WriteBarrier<JSCell>(vm, owner, callee),
+        WriteBarrier<CodeBlock>(vm, owner, codeBlock),
+        bytecodeIndex,
+        isAsyncFrame
+    })
+{
+}
+
 StackFrame::StackFrame(VM& vm, JSCell* owner, CodeBlock* codeBlock, BytecodeIndex bytecodeIndex)
     : m_frameData(JSFrameData {
         WriteBarrier<JSCell>(),
@@ -68,6 +79,16 @@ StackFrame::StackFrame(Wasm::IndexOrName indexOrName)
 
 StackFrame::StackFrame(Wasm::IndexOrName indexOrName, size_t functionIndex)
     : m_frameData(WasmFrameData { WTFMove(indexOrName), functionIndex })
+{
+}
+
+StackFrame::StackFrame(VM& vm, JSCell* owner, JSCell* callee, bool isAsyncFrame)
+    : m_frameData(JSFrameData {
+        WriteBarrier<JSCell>(vm, owner, callee),
+        WriteBarrier<CodeBlock>(),
+        BytecodeIndex(),
+        isAsyncFrame
+    })
 {
 }
 
@@ -137,12 +158,22 @@ String StackFrame::sourceURL(VM& vm) const
 {
     return WTF::switchOn(m_frameData,
         [&vm, this](const JSFrameData& jsFrame) -> String {
+            if (isAsyncFrameWithoutCodeBlock()) {
+                ASSERT(jsFrame.callee);
+                ASSERT(!jsFrame.codeBlock);
+                JSFunction* calleeFn = jsDynamicCast<JSFunction*>(jsFrame.callee.get());
+                return processSourceURL(vm, *this, calleeFn->jsExecutable()->sourceURL());
+            }
+
             if (!jsFrame.codeBlock)
                 return "[native code]"_s;
             return processSourceURL(vm, *this, jsFrame.codeBlock->ownerExecutable()->sourceURL());
         },
         [](const WasmFrameData& wasmFrame) -> String {
-            return makeString(wasmFrame.functionIndexOrName.moduleName(), ":wasm-function["_s, wasmFrame.functionIndex, ']');
+            auto moduleName = wasmFrame.functionIndexOrName.moduleName();
+            if (moduleName.empty())
+                return makeString("wasm-function["_s, wasmFrame.functionIndex, ']');
+            return makeString(moduleName, ":wasm-function["_s, wasmFrame.functionIndex, ']');
         }
     );
 }
@@ -151,12 +182,22 @@ String StackFrame::sourceURLStripped(VM& vm) const
 {
     return WTF::switchOn(m_frameData,
         [&vm, this](const JSFrameData& jsFrame) -> String {
+            if (isAsyncFrameWithoutCodeBlock()) {
+                ASSERT(jsFrame.callee);
+                ASSERT(!jsFrame.codeBlock);
+                JSFunction* calleeFn = jsDynamicCast<JSFunction*>(jsFrame.callee.get());
+                return processSourceURL(vm, *this, calleeFn->jsExecutable()->sourceURLStripped());
+            }
+
             if (!jsFrame.codeBlock)
                 return "[native code]"_s;
             return processSourceURL(vm, *this, jsFrame.codeBlock->ownerExecutable()->sourceURLStripped());
         },
         [](const WasmFrameData& wasmFrame) -> String {
-            return makeString(wasmFrame.functionIndexOrName.moduleName(), ":wasm-function["_s, wasmFrame.functionIndex, ']');
+            auto moduleName = wasmFrame.functionIndexOrName.moduleName();
+            if (moduleName.empty())
+                return makeString("wasm-function["_s, wasmFrame.functionIndex, ']');
+            return makeString(moduleName, ":wasm-function["_s, wasmFrame.functionIndex, ']');
         }
     );
 }
@@ -184,7 +225,14 @@ String StackFrame::functionName(VM& vm) const
                 if (auto* executable = jsDynamicCast<FunctionExecutable*>(jsFrame.codeBlock->ownerExecutable()))
                     name = executable->ecmaName().impl();
             }
-            return name.isNull() ? emptyString() : name;
+
+            if (name.isNull())
+                return emptyString();
+
+            if (jsFrame.m_isAsyncFrame)
+                return makeString("async "_s, name);
+
+            return name;
         },
         [](const WasmFrameData& wasmFrame) -> String {
             if (wasmFrame.functionIndexOrName.isEmpty() || !wasmFrame.functionIndexOrName.nameSection())

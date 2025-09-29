@@ -83,6 +83,7 @@ private:
         UniqueRef<RelativeColor<OKLCHFunction>>,
         UniqueRef<RelativeColor<ColorRGBFunction<ExtendedA98RGB<float>>>>,
         UniqueRef<RelativeColor<ColorRGBFunction<ExtendedDisplayP3<float>>>>,
+        UniqueRef<RelativeColor<ColorRGBFunction<ExtendedLinearDisplayP3<float>>>>,
         UniqueRef<RelativeColor<ColorRGBFunction<ExtendedProPhotoRGB<float>>>>,
         UniqueRef<RelativeColor<ColorRGBFunction<ExtendedRec2020<float>>>>,
         UniqueRef<RelativeColor<ColorRGBFunction<ExtendedSRGBA<float>>>>,
@@ -117,6 +118,7 @@ public:
     Color(RelativeColor<OKLCHFunction>&&);
     Color(RelativeColor<ColorRGBFunction<ExtendedA98RGB<float>>>&&);
     Color(RelativeColor<ColorRGBFunction<ExtendedDisplayP3<float>>>&&);
+    Color(RelativeColor<ColorRGBFunction<ExtendedLinearDisplayP3<float>>>&&);
     Color(RelativeColor<ColorRGBFunction<ExtendedProPhotoRGB<float>>>&&);
     Color(RelativeColor<ColorRGBFunction<ExtendedRec2020<float>>>&&);
     Color(RelativeColor<ColorRGBFunction<ExtendedSRGBA<float>>>&&);
@@ -177,6 +179,7 @@ WTF::TextStream& operator<<(WTF::TextStream&, const Color&);
 
 Color toStyleColor(const CSS::Color&, ColorResolutionState&);
 Color toStyleColor(const CSS::Color&, Ref<const Document>, const RenderStyle&, const CSSToLengthConversionData&, ForVisitedLink);
+Color toStyleColor(const CSS::Color&, const BuilderState&, ForVisitedLink);
 
 template<> struct ToCSS<Color> {
     auto operator()(const Color&, const RenderStyle&) -> CSS::Color;

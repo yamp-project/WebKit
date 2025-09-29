@@ -69,7 +69,7 @@
 #include "HTMLIFrameElement.h"
 #include "HTMLNames.h"
 #include "HTMLObjectElement.h"
-#include "HTMLPlugInImageElement.h"
+#include "HTMLPlugInElement.h"
 #include "HighlightRegistry.h"
 #include "ImageDocument.h"
 #include "InspectorBackendClient.h"
@@ -84,7 +84,6 @@
 #include "NodeInlines.h"
 #include "NodeRenderStyle.h"
 #include "NullGraphicsContext.h"
-#include "OverflowEvent.h"
 #include "Page.h"
 #include "PageColorSampler.h"
 #include "PageOverlayController.h"
@@ -682,7 +681,7 @@ void LocalFrameView::applyPaginationToViewport()
         if (!columnGap.isNormal()) {
             auto* renderBox = dynamicDowncast<RenderBox>(documentOrBodyRenderer);
             if (auto* containerForPaginationGap = renderBox ? renderBox : documentOrBodyRenderer->containingBlock())
-                pagination.gap = Style::evaluate(columnGap, containerForPaginationGap->contentBoxLogicalWidth()).toUnsigned();
+                pagination.gap = Style::evaluate<LayoutUnit>(columnGap, containerForPaginationGap->contentBoxLogicalWidth(), Style::ZoomNeeded { }).toUnsigned();
         }
     }
     setPagination(pagination);
@@ -887,7 +886,7 @@ void LocalFrameView::updateSnapOffsets()
     CheckedPtr rootRenderer = documentElement ? documentElement->renderBox() : nullptr;
 
     const RenderStyle* styleToUse = nullptr;
-    if (rootRenderer && rootRenderer->style().scrollSnapType().strictness != ScrollSnapStrictness::None)
+    if (rootRenderer && !rootRenderer->style().scrollSnapType().isNone())
         styleToUse = &rootRenderer->style();
 
     if (!styleToUse || !documentElement) {
@@ -1319,9 +1318,6 @@ void LocalFrameView::didLayout(SingleThreadWeakPtr<RenderElement> layoutRoot, bo
     handleDeferredScrollbarsUpdate();
     handleDeferredPositionScrollbarLayers();
 
-    if (document->hasListenerType(Document::ListenerType::OverflowChanged))
-        updateOverflowStatus(layoutWidth() < contentsWidth(), layoutHeight() < contentsHeight());
-
     if (CheckedPtr markers = document->markersIfExists())
         markers->invalidateRectsForAllMarkers();
 }
@@ -1528,7 +1524,7 @@ void LocalFrameView::addEmbeddedObjectToUpdate(RenderEmbeddedObject& embeddedObj
         m_embeddedObjectsToUpdate = makeUnique<ListHashSet<SingleThreadWeakRef<RenderEmbeddedObject>>>();
 
     auto& element = embeddedObject.frameOwnerElement();
-    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInImageElement>(element))
+    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInElement>(element))
         embedOrObject->setNeedsWidgetUpdate(true);
 
     m_embeddedObjectsToUpdate->add(embeddedObject);
@@ -2153,7 +2149,7 @@ static bool isHiddenOrNearlyTransparent(const RenderBox& box)
     if (box.opacity() < PageColorSampler::nearlyTransparentAlphaThreshold)
         return true;
 
-    if (!box.hasBackground() && !box.firstChild() && !is<RenderReplaced>(box))
+    if (!box.hasBackground() && !box.hasBackdropFilter() && !box.firstChild() && !is<RenderReplaced>(box))
         return true;
 
     return false;
@@ -2192,6 +2188,7 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         Color backgroundColor;
     };
 
+    auto sizeForViewportUnits = LayoutSize { sizeForCSSDefaultViewportUnits() };
     auto unclampedFixedRect = rectForFixedPositionLayout();
     auto fixedRect = unclampedFixedRect;
     if (CheckedPtr view = renderView())
@@ -2214,14 +2211,14 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         return side;
     };
 
-    auto lengthOnSide = [](BoxSide side, const LayoutRect& rect) -> LayoutUnit {
+    auto lengthOnSide = [](BoxSide side, auto& rectOrSize) -> LayoutUnit {
         switch (side) {
         case BoxSide::Top:
         case BoxSide::Bottom:
-            return rect.width();
+            return rectOrSize.width();
         case BoxSide::Right:
         case BoxSide::Left:
-            return rect.height();
+            return rectOrSize.height();
         }
         return { };
     };
@@ -2238,7 +2235,7 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         static constexpr auto maximumRatio = 1.05;
         auto elementRect = enclosingLayoutRect(renderer.absoluteBoundingBoxRect());
         auto containerLength = lengthOnSide(side, elementRect);
-        auto viewportLength = lengthOnSide(side, fixedRect);
+        auto viewportLength = std::min(lengthOnSide(side, fixedRect), lengthOnSide(side, sizeForViewportUnits));
         if (containerLength < viewportLength * minimumRatio)
             return Smaller;
 
@@ -2305,7 +2302,6 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         NoLayer,
         NotFixedOrSticky,
         IsHiddenOrTransparent,
-        IsScrollable,
         TooSmall,
         TooLarge,
         IsViewportSizedCandidate,
@@ -2327,9 +2323,6 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         if (CheckedPtr box = dynamicDowncast<RenderBox>(renderer)) {
             if (isHiddenOrNearlyTransparent(*box))
                 return IsHiddenOrTransparent;
-
-            if (box->canBeScrolledAndHasScrollableArea())
-                return IsScrollable;
 
             isProbablyDimmingContainer = [&] {
                 if (lengthOnSide == ViewportComparison::Smaller)
@@ -2397,20 +2390,21 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         bool foundBackdropFilter = false;
         bool hitInvisiblePointerEventsNoneContainer = false;
         for (CheckedRef ancestor : lineageOfType<RenderElement>(*renderer)) {
-            if (ancestor->hasBackdropFilter())
-                foundBackdropFilter = true;
-            else if (auto color = primaryBackgroundColorForRenderer(side, ancestor); color.isVisible()) {
-                if (!primaryBackgroundColor.isVisible())
-                    primaryBackgroundColor = WTFMove(color);
-                else if (primaryBackgroundColor != color)
-                    hasMultipleBackgroundColors = true;
+            auto candidateType = containerEdgeCandidateResult(side, ancestor);
+            if (candidateType != IsHiddenOrTransparent) {
+                if (ancestor->hasBackdropFilter())
+                    foundBackdropFilter = true;
+                else if (auto color = primaryBackgroundColorForRenderer(side, ancestor); color.isVisible()) {
+                    if (!primaryBackgroundColor.isVisible())
+                        primaryBackgroundColor = WTFMove(color);
+                    else if (primaryBackgroundColor != color)
+                        hasMultipleBackgroundColors = true;
+                }
             }
 
-            auto candidateType = containerEdgeCandidateResult(side, ancestor);
             switch (candidateType) {
             case NoLayer:
             case NotFixedOrSticky:
-            case IsScrollable:
             case TooSmall:
                 break;
             case TooLarge:
@@ -2470,7 +2464,7 @@ std::pair<FixedContainerEdges, WeakElementEdges> LocalFrameView::fixedContainerE
         if (!border->isVisible())
             return samplingRect;
 
-        auto borderWidth = Style::evaluate(border->width());
+        auto borderWidth = Style::evaluate<float>(border->width(), Style::ZoomNeeded { });
         if (borderWidth > thinBorderWidth)
             return samplingRect;
 
@@ -4177,10 +4171,10 @@ LocalFrameView::ExtendedBackgroundMode LocalFrameView::calculateExtendedBackgrou
         return ExtendedBackgroundModeNone;
 
     ExtendedBackgroundMode mode = ExtendedBackgroundModeNone;
-    auto backgroundRepeat = rootBackgroundRenderer->style().backgroundRepeat();
-    if (backgroundRepeat.x == FillRepeat::Repeat)
+    auto backgroundRepeat = rootBackgroundRenderer->style().backgroundLayers().first().repeat();
+    if (backgroundRepeat.x() == FillRepeat::Repeat)
         mode |= ExtendedBackgroundModeHorizontal;
-    if (backgroundRepeat.y == FillRepeat::Repeat)
+    if (backgroundRepeat.y() == FillRepeat::Repeat)
         mode |= ExtendedBackgroundModeVertical;
 
     return mode;
@@ -4431,7 +4425,7 @@ void LocalFrameView::updateEmbeddedObject(const SingleThreadWeakPtr<RenderEmbedd
     if (embeddedObject->isPluginUnavailable())
         return;
 
-    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInImageElement>(embeddedObject->frameOwnerElement())) {
+    if (RefPtr embedOrObject = dynamicDowncast<HTMLPlugInElement>(embeddedObject->frameOwnerElement())) {
         if (embedOrObject->needsWidgetUpdate())
             embedOrObject->updateWidget(CreatePlugins::Yes);
     } else
@@ -4542,6 +4536,7 @@ void LocalFrameView::performPostLayoutTasks()
     resnapAfterLayout();
 
     m_frame->document()->scheduleDeferredAXObjectCacheUpdate();
+    m_frame->eventHandler().scheduleMouseEventTargetUpdateAfterLayout();
 }
 
 void LocalFrameView::dequeueScrollableAreaForScrollAnchoringUpdate(ScrollableArea& scrollableArea)
@@ -4866,34 +4861,6 @@ RenderElement* LocalFrameView::viewportRenderer() const
 
     ASSERT_NOT_REACHED();
     return nullptr;
-}
-
-void LocalFrameView::updateOverflowStatus(bool horizontalOverflow, bool verticalOverflow)
-{
-    auto* viewportRenderer = this->viewportRenderer();
-    if (!viewportRenderer)
-        return;
-
-    if (m_overflowStatusDirty) {
-        m_horizontalOverflow = horizontalOverflow;
-        m_verticalOverflow = verticalOverflow;
-        m_overflowStatusDirty = false;
-        return;
-    }
-
-    bool horizontalOverflowChanged = (m_horizontalOverflow != horizontalOverflow);
-    bool verticalOverflowChanged = (m_verticalOverflow != verticalOverflow);
-
-    if (horizontalOverflowChanged || verticalOverflowChanged) {
-        m_horizontalOverflow = horizontalOverflow;
-        m_verticalOverflow = verticalOverflow;
-
-        Ref<OverflowEvent> overflowEvent = OverflowEvent::create(horizontalOverflowChanged, horizontalOverflow,
-            verticalOverflowChanged, verticalOverflow);
-        overflowEvent->setTarget(RefPtr { viewportRenderer->element() });
-
-        m_frame->document()->enqueueOverflowEvent(WTFMove(overflowEvent));
-    }
 }
 
 const Pagination& LocalFrameView::pagination() const
@@ -6211,7 +6178,7 @@ void LocalFrameView::scrollDidEnd()
     if (!m_frame->view())
         return;
     if (RefPtr document = m_frame->document())
-        document->addPendingScrollendEventTarget(*document);
+        document->addPendingScrollEventTarget(*document, ScrollEventType::Scrollend);
 }
 
 void LocalFrameView::scheduleScrollEvent()

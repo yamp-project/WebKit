@@ -45,16 +45,17 @@ class CallLinkInfo;
 namespace Wasm {
 
 class BBQCallee;
+class IPIntCallee;
 class CalleeGroup;
-class JSEntrypointCallee;
+class JSToWasmCallee;
 
 class BBQPlan final : public Plan {
 public:
     using Base = Plan;
 
-    static Ref<BBQPlan> create(VM& vm, Ref<ModuleInformation>&& info, FunctionCodeIndex functionIndex, std::optional<bool> hasExceptionHandlers, Ref<CalleeGroup>&& calleeGroup, CompletionTask&& completionTask)
+    static Ref<BBQPlan> create(VM& vm, Ref<ModuleInformation>&& info, FunctionCodeIndex functionIndex, Ref<IPIntCallee>&& profiledCallee, Ref<Module>&& module, Ref<CalleeGroup>&& calleeGroup, CompletionTask&& completionTask)
     {
-        return adoptRef(*new BBQPlan(vm, WTFMove(info), functionIndex, hasExceptionHandlers, WTFMove(calleeGroup), WTFMove(completionTask)));
+        return adoptRef(*new BBQPlan(vm, WTFMove(info), functionIndex, WTFMove(profiledCallee), WTFMove(module), WTFMove(calleeGroup), WTFMove(completionTask)));
     }
 
     bool hasWork() const final { return !m_completed; }
@@ -65,7 +66,7 @@ public:
 
 
 private:
-    BBQPlan(VM&, Ref<ModuleInformation>&&, FunctionCodeIndex functionIndex, std::optional<bool> hasExceptionHandlers, Ref<CalleeGroup>&&, CompletionTask&&);
+    BBQPlan(VM&, Ref<ModuleInformation>&&, FunctionCodeIndex functionIndex, Ref<IPIntCallee>&&, Ref<Module>&&, Ref<CalleeGroup>&&, CompletionTask&&);
 
     bool dumpDisassembly(CompilationContext&, LinkBuffer&, const TypeDefinition&, FunctionSpaceIndex functionIndexSpace);
 
@@ -79,10 +80,11 @@ private:
 
     void fail(String&& errorMessage, CompilationError);
 
+    const Ref<IPIntCallee> m_profiledCallee;
+    const Ref<Module> m_module;
     const Ref<CalleeGroup> m_calleeGroup;
     FunctionCodeIndex m_functionIndex;
     bool m_completed { false };
-    std::optional<bool> m_hasExceptionHandlers;
 };
 
 

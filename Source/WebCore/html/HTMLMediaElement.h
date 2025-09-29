@@ -211,7 +211,6 @@ public:
     virtual bool isVideo() const { return false; }
     bool hasVideo() const override { return false; }
     WEBCORE_EXPORT bool hasAudio() const override;
-    bool hasRenderer() const { return static_cast<bool>(renderer()); }
 
     WEBCORE_EXPORT static HashSet<WeakRef<HTMLMediaElement>>& allMediaElements();
 
@@ -260,7 +259,6 @@ public:
 
     WEBCORE_EXPORT bool isActiveNowPlayingSession() const;
     void isActiveNowPlayingSessionChanged() final;
-    std::optional<ProcessID> mediaSessionPresentingApplicationPID() const final;
 
 // DOM API
 // error state
@@ -589,7 +587,6 @@ public:
 
     void pageScaleFactorChanged();
     void userInterfaceLayoutDirectionChanged();
-    WEBCORE_EXPORT String getCurrentMediaControlsStatus();
     WEBCORE_EXPORT void setMediaControlsMaximumRightContainerButtonCountOverride(size_t);
     WEBCORE_EXPORT void setMediaControlsHidePlaybackRates(bool);
     MediaControlsHost* mediaControlsHost() { return m_mediaControlsHost.get(); }
@@ -606,7 +603,8 @@ public:
     void allowsMediaDocumentInlinePlaybackChanged();
     void updateShouldPlay();
 
-    RenderMedia* renderer() const;
+    inline bool hasRenderer() const; // Defined in RenderMedia.h.
+    inline RenderMedia* renderer() const; // Defined in RenderMedia.h.
 
     void resetPlaybackSessionState();
     WEBCORE_EXPORT bool isVisibleInViewport() const;
@@ -1048,8 +1046,6 @@ private:
     enum class SleepType : uint8_t { None, Display, System };
     SleepType shouldDisableSleep() const;
 
-    DOMWrapperWorld& ensureIsolatedWorld();
-
     RefPtr<MediaSessionManagerInterface> sessionManager() const final;
     PlatformMediaSession::MediaType mediaType() const override;
     PlatformMediaSession::MediaType presentationType() const override;
@@ -1095,11 +1091,7 @@ private:
     void initializeMediaSession();
     void invalidateMediaSession();
 
-    void updateCaptionContainer();
     bool ensureMediaControls();
-
-    using JSSetupFunction = Function<bool(JSDOMGlobalObject&, JSC::JSGlobalObject&, ScriptController&, DOMWrapperWorld&)>;
-    bool setupAndCallJS(NOESCAPE const JSSetupFunction&);
 
 #if ENABLE(WIRELESS_PLAYBACK_TARGET)
     void prepareForDocumentSuspension() final;
@@ -1163,6 +1155,7 @@ private:
     bool isWatchtimeTimerActive() const;
     void startWatchtimeTimer();
     void pauseWatchtimeTimer();
+    void fireAndRestartWatchtimeTimer();
     void invalidateWatchtimeTimer();
     void watchtimeTimerFired();
     void startBufferingStopwatch();
@@ -1331,7 +1324,6 @@ private:
     bool m_hasEverHadVideo : 1;
 
     bool m_mediaControlsDependOnPageScaleFactor : 1;
-    bool m_haveSetUpCaptionContainer : 1;
 
     bool m_isScrubbingRemotely : 1;
     bool m_waitingToEnterFullscreen : 1;
@@ -1413,8 +1405,7 @@ private:
     size_t m_reportedExtraMemoryCost { 0 };
 
     friend class MediaControlsHost;
-    RefPtr<MediaControlsHost> m_mediaControlsHost;
-    RefPtr<DOMWrapperWorld> m_isolatedWorld;
+    const std::unique_ptr<MediaControlsHost> m_mediaControlsHost;
 
 #if ENABLE(MEDIA_STREAM)
     RefPtr<MediaStream> m_mediaStreamSrcObject;

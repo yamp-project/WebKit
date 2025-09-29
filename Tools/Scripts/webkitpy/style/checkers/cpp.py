@@ -1526,13 +1526,14 @@ def check_for_non_standard_constructs(clean_lines, line_number,
     # For the rest, work with both comments and strings removed.
     line = clean_lines.elided[line_number]
 
-    if search(r'\b(const|volatile|void|char|short|int|long'
+    if search(r'\b(const|constexpr|constinit|consteval|volatile|'
+              r'void|char|short|int|long'
               r'|float|double|signed|unsigned'
               r'|schar|u?int8|u?int16|u?int32|u?int64)'
-              r'\s+(auto|register|static|extern|typedef)\b',
+              r'\s+(static|extern|typedef|register)\b',
               line):
         error(line_number, 'build/storage_class', 5,
-              'Storage class (static, extern, typedef, etc) should be first.')
+              'Storage class (static, extern, typedef, register) should be first.')
 
     if match(r'\s*#\s*endif\s*[^/\s]+', line):
         error(line_number, 'build/endif_comment', 5,
@@ -2307,7 +2308,7 @@ def check_spacing(file_extension, clean_lines, line_number, file_state, error):
                   'Should have spaces around = in property synthesis.')
 
     # Don't try to do spacing checks for operator methods
-    line = sub(r'operator(==|!=|<|<<|<=|>=|>>|>|\+=|-=|\*=|/=|%=|&=|\|=|^=|<<=|>>=|/)\(', r'operator\(', line)
+    line = sub(r'operator(==|!=|<|<<|<=|>=|>>|>|\+=|-=|\*=|/=|%=|&=|\|=|^=|<<=|>>=|/|\|)\(', r'operator\(', line)
     # Don't try to do spacing checks for #include, #import, #if, or #elif statements at
     # minimum because it messes up checks for spacing around /
     if match(r'\s*#\s*(?:include|import|if|elif)', line):
@@ -3610,6 +3611,14 @@ def check_safer_cpp(clean_lines, line_number, error):
     uses_strncmp = search(r'strncmp\(', line)
     if uses_strncmp:
         error(line_number, 'safercpp/strncmp', 4, "strncmp() is unsafe.")
+
+    uses_dispatch_get_global_queue = search(r'dispatch_get_global_queue\(', line)
+    if uses_dispatch_get_global_queue:
+        error(line_number, 'safercpp/dispatch_get_global_queue', 4, "use globalDispatchQueueSingleton() instead of dispatch_get_global_queue().")
+
+    uses_dispatch_get_main_queue = search(r'dispatch_get_main_queue\(', line)
+    if uses_dispatch_get_main_queue:
+        error(line_number, 'safercpp/dispatch_get_main_queue', 4, "use mainDispatchQueueSingleton() instead of dispatch_get_main_queue().")
 
     uses_printf = search(r'\bprintf\b', line)
     if uses_printf:
@@ -5006,6 +5015,8 @@ class CppChecker(object):
         'runtime/wtf_never_destroyed',
         'safercpp/atoi',
         'safercpp/checked_getter_for_init',
+        'safercpp/dispatch_get_global_queue',
+        'safercpp/dispatch_get_main_queue',
         'safercpp/memchr',
         'safercpp/memcmp',
         'safercpp/memcpy',

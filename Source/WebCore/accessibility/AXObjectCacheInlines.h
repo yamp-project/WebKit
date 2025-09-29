@@ -29,7 +29,8 @@
 #pragma once
 
 #include "AXGeometryManager.h"
-#include <wtf/text/MakeString.h>
+#include "AXIsolatedTree.h"
+#include "AXObjectCache.h"
 
 namespace WebCore {
 
@@ -68,6 +69,20 @@ inline Node* AXObjectCache::nodeForID(std::optional<AXID> axID) const
     return object ? object->node() : nullptr;
 }
 
+inline AccessibilityObject* AXObjectCache::getOrCreate(Node& node, IsPartOfRelation isPartOfRelation)
+{
+    if (RefPtr object = get(node))
+        return object.get();
+    return getOrCreateSlow(node, isPartOfRelation);
+}
+
+inline AccessibilityObject* AXObjectCache::getOrCreate(Element& element, IsPartOfRelation isPartOfRelation)
+{
+    if (RefPtr object = get(element))
+        return object.get();
+    return getOrCreateSlow(element, isPartOfRelation);
+}
+
 #if ENABLE(ACCESSIBILITY_ISOLATED_TREE)
 
 inline void AXObjectCache::scheduleObjectRegionsUpdate(bool scheduleImmediately)
@@ -82,14 +97,14 @@ inline void AXObjectCache::willUpdateObjectRegions()
 
 inline void AXObjectCache::objectBecameIgnored(const AccessibilityObject& object)
 {
-    if (RefPtr tree = AXIsolatedTree::treeForPageID(m_pageID))
+    if (RefPtr tree = AXIsolatedTree::treeForFrameID(m_frameID))
         tree->objectBecameIgnored(object);
 }
 
 inline void AXObjectCache::objectBecameUnignored(const AccessibilityObject& object)
 {
 #if ENABLE(INCLUDE_IGNORED_IN_CORE_AX_TREE)
-    if (RefPtr tree = AXIsolatedTree::treeForPageID(m_pageID))
+    if (RefPtr tree = AXIsolatedTree::treeForFrameID(m_frameID))
         tree->objectBecameUnignored(object);
 #else
     UNUSED_PARAM(object);

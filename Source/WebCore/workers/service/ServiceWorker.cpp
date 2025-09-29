@@ -26,6 +26,7 @@
 #include "config.h"
 #include "ServiceWorker.h"
 
+#include "ContextDestructionObserverInlines.h"
 #include "Document.h"
 #include "EventNames.h"
 #include "EventTargetInterfaces.h"
@@ -77,6 +78,9 @@ ServiceWorker::ServiceWorker(ScriptExecutionContext& context, ServiceWorkerData&
 
 ServiceWorker::~ServiceWorker()
 {
+    if (m_isStopped)
+        return;
+
     if (RefPtr context = scriptExecutionContext())
         context->unregisterServiceWorker(*this);
 }
@@ -99,6 +103,11 @@ SWClientConnection& ServiceWorker::swConnection()
     if (RefPtr worker = dynamicDowncast<WorkerGlobalScope>(scriptExecutionContext()))
         return worker->swClientConnection();
     return ServiceWorkerProvider::singleton().serviceWorkerConnection();
+}
+
+Ref<SWClientConnection> ServiceWorker::protectedSWConnection()
+{
+    return swConnection();
 }
 
 ExceptionOr<void> ServiceWorker::postMessage(JSC::JSGlobalObject& globalObject, JSC::JSValue messageValue, StructuredSerializeOptions&& options)
@@ -125,7 +134,7 @@ ExceptionOr<void> ServiceWorker::postMessage(JSC::JSGlobalObject& globalObject, 
     }();
 
     MessageWithMessagePorts message { messageData.releaseReturnValue(), portsOrException.releaseReturnValue() };
-    swConnection().postMessageToServiceWorker(identifier(), WTFMove(message), sourceIdentifier);
+    protectedSWConnection()->postMessageToServiceWorker(identifier(), WTFMove(message), sourceIdentifier);
     return { };
 }
 
@@ -143,7 +152,7 @@ void ServiceWorker::stop()
 {
     m_isStopped = true;
     removeAllEventListeners();
-    scriptExecutionContext()->unregisterServiceWorker(*this);
+    protectedScriptExecutionContext()->unregisterServiceWorker(*this);
     updatePendingActivityForEventDispatch();
 }
 

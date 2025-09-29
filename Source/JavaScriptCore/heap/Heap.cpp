@@ -52,6 +52,8 @@
 #include "JITWorklistInlines.h"
 #include "JSFinalizationRegistry.h"
 #include "JSIterator.h"
+#include "JSPromiseAllContext.h"
+#include "JSPromiseReaction.h"
 #include "JSRawJSONObject.h"
 #include "JSRemoteFunction.h"
 #include "JSVirtualMachineInternal.h"
@@ -2706,6 +2708,7 @@ bool Heap::shouldDoFullCollection()
 
 void Heap::addLogicallyEmptyWeakBlock(WeakBlock* block)
 {
+    RELEASE_ASSERT(!block->next() && !block->prev());
     m_logicallyEmptyWeakBlocks.append(block);
 }
 
@@ -2724,6 +2727,7 @@ bool Heap::sweepNextLogicallyEmptyWeakBlock()
         return false;
 
     WeakBlock* block = m_logicallyEmptyWeakBlocks[m_indexOfNextLogicallyEmptyWeakBlockToSweep];
+    RELEASE_ASSERT(!block->next() && !block->prev());
 
     block->sweep();
     if (block->isEmpty()) {

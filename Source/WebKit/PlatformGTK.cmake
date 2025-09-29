@@ -52,6 +52,11 @@ list(APPEND WebKit_UNIFIED_SOURCE_LIST_FILES
     "SourcesGTK.txt"
 )
 
+list(APPEND WebKit_LIBRARIES
+    GLib::GioUnix
+    GLib::Module
+)
+
 list(APPEND WebKit_MESSAGES_IN_FILES
     UIProcess/ViewGestureController
 
@@ -317,11 +322,8 @@ list(APPEND WebKit_PRIVATE_INCLUDE_DIRECTORIES
 
 list(APPEND WebKit_SYSTEM_INCLUDE_DIRECTORIES
     ${ENCHANT_INCLUDE_DIRS}
-    ${GIO_UNIX_INCLUDE_DIRS}
-    ${GLIB_INCLUDE_DIRS}
     ${GSTREAMER_INCLUDE_DIRS}
     ${GSTREAMER_PBUTILS_INCLUDE_DIRS}
-    ${GTK_INCLUDE_DIRS}
     ${LIBSOUP_INCLUDE_DIRS}
 )
 
@@ -456,13 +458,14 @@ WEBKIT_BUILD_INSPECTOR_GRESOURCES(
 )
 
 set(WebKitResources "")
-list(APPEND WebKitResources "<file alias=\"css/gtk-theme.css\">gtk-theme.css</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/missingImage\">missingImage.png</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/missingImage@2x\">missingImage@2x.png</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/missingImage@3x\">missingImage@3x.png</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/panIcon\">panIcon.png</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/textAreaResizeCorner\">textAreaResizeCorner.png</file>\n")
-list(APPEND WebKitResources "<file alias=\"images/textAreaResizeCorner@2x\">textAreaResizeCorner@2x.png</file>\n")
+list(APPEND WebKitResources "        <file alias='css/gtk-theme.css'>gtk-theme.css</file>\n"
+  "        <file alias='images/missingImage@2x'>missingImage@2x.png</file>\n"
+  "        <file alias='images/missingImage@3x'>missingImage@3x.png</file>\n"
+  "        <file alias='images/missingImage'>missingImage.png</file>\n"
+  "        <file alias='images/panIcon'>panIcon.png</file>\n"
+  "        <file alias='images/textAreaResizeCorner@2x'>textAreaResizeCorner@2x.png</file>\n"
+  "        <file alias='images/textAreaResizeCorner'>textAreaResizeCorner.png</file>\n"
+)
 
 if (ENABLE_WEB_AUDIO)
     list(APPEND WebKitResources

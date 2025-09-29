@@ -56,8 +56,16 @@
                   { "name": "bot1021", "platform": "mac-sequoia" },
                   { "name": "bot1025", "platform": "mac-sequoia" },
                   { "name": "bot1026", "platform": "mac-sequoia" },
-                  { "name": "bot1027", "platform": "mac-sequoia" },
-                  { "name": "bot1028", "platform": "mac-sequoia" },
+                  { "name": "bot605", "platform": "mac-sequoia" },
+                  { "name": "bot616", "platform": "mac-sequoia" },
+                  { "name": "bot621", "platform": "*" },
+                  { "name": "bot665", "platform": "mac-sequoia" },
+                  { "name": "bot669", "platform": "mac-sequoia" },
+                  { "name": "bot675", "platform": "mac-sequoia" },
+                  { "name": "bot676", "platform": "mac-sequoia" },
+                  { "name": "bot678", "platform": "*" },
+                  { "name": "bot1027", "platform": "*" },
+                  { "name": "bot1028", "platform": "*" },
 
                   { "name": "bot304", "platform": "ios-18" },
                   { "name": "bot305", "platform": "ios-simulator-18" },
@@ -180,17 +188,17 @@
                       "sequoia-applesilicon-release-tests-test262", "sequoia-release-tests-wk2-accessibility-isolated-tree", 
                       "sequoia-release-tests-wk2-site-isolation-tree", "sequoia-release-world-leaks-tests"
                   ],
-                  "workernames": ["bot279", "bot198"]
+                  "workernames": ["bot605", "bot279", "bot198"]
                   },
                   { "name": "Apple-Sequoia-Release-WK1-Tests", "factory": "TestWebKit1AllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
                   "additionalArguments": ["--no-retry-failures"],
-                  "workernames": ["bot1026"]
+                  "workernames": ["bot669", "bot1026"]
                   },
                   { "name": "Apple-Sequoia-Release-World-Leaks-Tests", "factory": "TestWorldLeaksFactory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
                   "additionalArguments": ["--no-retry-failures"],
-                  "workernames": ["bot1027", "bot1028"]
+                  "workernames": ["bot303"]
                   },
                   { "name": "Apple-Sequoia-Release-AppleSilicon-WK2-Tests", "factory": "TestAllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
@@ -205,7 +213,7 @@
                   { "name": "Apple-Sequoia-Release-WK2-Tests", "factory": "TestAllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
                   "additionalArguments": ["--no-retry-failures"],
-                  "workernames": ["bot1025"]
+                  "workernames": ["bot616", "bot1025"]
                   },
                   { "name": "Apple-Sequoia-AppleSilicon-Release-Test262-Tests", "factory": "Test262Factory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
@@ -222,8 +230,8 @@
                   },
                   { "name": "Apple-Sequoia-Release-WK2-Site-Isolation-Tree-Tests", "factory": "TestLayoutFactory",
                   "platform": "mac-sequoia", "configuration": "release", "architectures": ["x86_64", "arm64"],
-                  "additionalArguments": ["--no-retry-failures", "--site-isolation", "--load-in-cross-origin-iframe"],
-                  "workernames": ["bot2000", "bot2001", "bot303"]
+                  "additionalArguments": ["--no-retry-failures", "--site-isolation", "--load-in-cross-origin-iframe", "--child-processes=19"],
+                  "workernames": ["bot2000", "bot2001"]
                   },
                   { "name": "Apple-Sequoia-Debug-Build", "factory": "BuildFactory",
                   "platform": "mac-sequoia", "configuration": "debug", "architectures": ["x86_64", "arm64"],
@@ -231,17 +239,17 @@
                       "sequoia-debug-tests-wk1", "sequoia-debug-tests-wk2", "sequoia-debug-applesilicon-tests-wk1",
                       "sequoia-debug-applesilicon-tests-wk2"
                   ],
-                  "workernames": ["bot131", "bot141"]
+                  "workernames": ["bot665", "bot131", "bot141"]
                   },
                   { "name": "Apple-Sequoia-Debug-WK1-Tests", "factory": "TestWebKit1AllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "debug", "architectures": ["x86_64", "arm64"],
                   "additionalArguments": ["--no-retry-failures"],
-                  "workernames": ["bot1021"]
+                  "workernames": ["bot676", "bot1021"]
                   },
                   { "name": "Apple-Sequoia-Debug-WK2-Tests", "factory": "TestAllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "debug", "architectures": ["x86_64", "arm64"],
                   "additionalArguments": ["--no-retry-failures"],
-                  "workernames": ["bot614"]
+                  "workernames": ["bot675", "bot614"]
                   },
                   { "name": "Apple-Sequoia-Debug-AppleSilicon-WK1-Tests", "factory": "TestWebKit1AllButJSCFactory",
                   "platform": "mac-sequoia", "configuration": "debug", "architectures": ["x86_64", "arm64"],
@@ -580,7 +588,7 @@
                     "workernames": ["jsconly-linux-igalia-bot-2"]
                   },
                   {
-                    "name": "JSCOnly-Linux-ARMv7-Thumb2-Release", "factory": "BuildAndJSCTests32Factory",
+                    "name": "JSCOnly-Linux-ARMv7-Thumb2-Release", "factory": "BuildAndJSCTestsFactory",
                     "platform": "jsc-only", "configuration": "release", "architectures": ["armv7"],
                     "workernames": ["jsconly-linux-igalia-bot-3"]
                   },
@@ -694,7 +702,7 @@
                   {
                     "name": "WPE-Linux-64-bit-Release-Cairo-Build", "factory": "BuildFactory",
                     "platform": "wpe", "configuration": "release", "architectures": ["x86_64"],
-                    "additionalArguments": ["--cmakeargs=-DUSE_SKIA=OFF"],
+                    "additionalArguments": ["--cmakeargs=-DUSE_SKIA=OFF", "--cmakeargs=-DUSE_GSTREAMER_WEBRTC=FALSE"],
                     "workernames": ["wpe-linux-bot-35"]
                   },
                   {

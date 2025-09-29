@@ -47,6 +47,7 @@ public:
     static Ref<TestInvocation> create(WKURLRef, const TestOptions&);
     ~TestInvocation();
 
+    uint64_t identifier() const { return m_identifier; }
     WKURLRef url() const { return m_url.get(); }
     bool urlContains(StringView) const;
     
@@ -83,6 +84,8 @@ public:
 
     void dumpResourceLoadStatisticsIfNecessary();
 
+    void runUISideScript(WKStringRef, unsigned callbackID);
+
 private:
     TestInvocation(WKURLRef, const TestOptions&);
 
@@ -113,23 +116,15 @@ private:
     bool compareActualHashToExpectedAndDumpResults(const std::string&);
 
     static void forceRepaintDoneCallback(WKErrorRef, void* context);
-    
-    struct UIScriptInvocationData {
-        unsigned callbackID;
-        WebKit::WKRetainPtr<WKStringRef> scriptString;
-        WeakPtr<TestInvocation> testInvocation;
-    };
-    static void runUISideScriptAfterUpdateCallback(WKErrorRef, void* context);
-    static void runUISideScriptImmediately(WKErrorRef, void* context);
 
     bool shouldLogHistoryClientCallbacks() const;
 
-    void runUISideScript(WKStringRef, unsigned callbackID);
     // UIScriptContextDelegate
     void uiScriptDidComplete(const String& result, unsigned callbackID) override;
 
     const TestOptions m_options;
     
+    uint64_t m_identifier;
     WKRetainPtr<WKURLRef> m_url;
     String m_urlString;
     RunLoop::Timer m_waitToDumpWatchdogTimer;

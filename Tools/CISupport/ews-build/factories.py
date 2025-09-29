@@ -79,23 +79,6 @@ class StyleFactory(factory.BuildFactory):
         self.addStep(CheckStyle())
 
 
-class WatchListFactory(factory.BuildFactory):
-    def __init__(self, platform, configuration=None, architectures=None, triggers=None, remotes=None, additionalArguments=None, **kwargs):
-        factory.BuildFactory.__init__(self)
-        self.addStep(ConfigureBuild(platform=platform, configuration=configuration, architectures=architectures, buildOnly=False, triggers=triggers, remotes=remotes, additionalArguments=additionalArguments))
-        self.addStep(ValidateChange())
-        self.addStep(PrintConfiguration())
-        self.addStep(CleanGitRepo())
-        self.addStep(SetCredentialHelper())
-        self.addStep(CheckOutSource())
-        self.addStep(FetchBranches())
-        self.addStep(UpdateWorkingDirectory())
-        self.addStep(ShowIdentifier())
-        self.addStep(ApplyPatch())
-        self.addStep(CheckOutPullRequest())
-        self.addStep(ApplyWatchList())
-
-
 class SaferCPPStaticAnalyzerFactory(factory.BuildFactory):
     findModifiedLayoutTests = False
 
@@ -110,14 +93,15 @@ class SaferCPPStaticAnalyzerFactory(factory.BuildFactory):
         self.addStep(CheckOutSource())
         self.addStep(FetchBranches())
         self.addStep(ShowIdentifier())
-        self.addStep(InstallCMake())
-        self.addStep(InstallNinja())
-        self.addStep(PrintClangVersion())
-        self.addStep(CheckOutLLVMProject())
-        self.addStep(UpdateClang())
         self.addStep(CheckOutPullRequest())
         self.addStep(KillOldProcesses())
         self.addStep(ValidateChange(addURLs=False))
+        self.addStep(InstallCMake())
+        self.addStep(InstallNinja())
+        self.addStep(GetLLVMVersion())
+        self.addStep(PrintClangVersion())
+        self.addStep(CheckOutLLVMProject())
+        self.addStep(UpdateClang())
         self.addStep(FindModifiedSaferCPPExpectations())
         self.addStep(ScanBuild())
 
@@ -209,7 +193,7 @@ class JSCBuildFactory(Factory):
         Factory.__init__(self, platform=platform, configuration=configuration, architectures=architectures, buildOnly=False, triggers=triggers, remotes=remotes, additionalArguments=additionalArguments, checkRelevance=True)
         self.addStep(KillOldProcesses())
         self.addStep(ValidateChange(addURLs=False))
-        self.addStep(CompileJSC32() if architectures and 'armv7' in architectures else CompileJSC())
+        self.addStep(CompileJSC())
 
 
 class JSCBuildAndTestsFactory(Factory):
@@ -217,9 +201,9 @@ class JSCBuildAndTestsFactory(Factory):
         Factory.__init__(self, platform=platform, configuration=configuration, architectures=architectures, buildOnly=False, remotes=remotes, additionalArguments=additionalArguments, checkRelevance=True)
         self.addStep(KillOldProcesses())
         self.addStep(ValidateChange(addURLs=False))
-        self.addStep(CompileJSC32(skipUpload=True) if architectures and 'armv7' in architectures else CompileJSC(skipUpload=True))
+        self.addStep(CompileJSC(skipUpload=True))
         if runTests.lower() == 'true':
-            self.addStep(RunJavaScriptCoreTests32() if architectures and 'armv7' in architectures else RunJavaScriptCoreTests())
+            self.addStep(RunJavaScriptCoreTests())
 
 
 class JSCTestsFactory(Factory):
@@ -228,7 +212,7 @@ class JSCTestsFactory(Factory):
         self.addStep(KillOldProcesses())
         self.addStep(DownloadBuiltProduct())
         self.addStep(ExtractBuiltProduct())
-        self.addStep(RunJavaScriptCoreTests32() if architectures and 'armv7' in architectures else RunJavaScriptCoreTests())
+        self.addStep(RunJavaScriptCoreTests())
 
 
 class APITestsFactory(TestFactory):
@@ -337,7 +321,8 @@ class ServicesFactory(Factory):
     def __init__(self, platform, configuration=None, architectures=None, additionalArguments=None, **kwargs):
         Factory.__init__(self, platform=platform, configuration=configuration, architectures=architectures, buildOnly=False, additionalArguments=additionalArguments, checkRelevance=True)
         self.addStep(ValidateChange(verifyBugClosed=False, addURLs=False))
-        self.addStep(RunBuildWebKitOrgUnitTests())
+        # TODO: update unit-tests for Buildbot 4, see https://bugs.webkit.org/show_bug.cgi?id=299036
+        # self.addStep(RunBuildWebKitOrgUnitTests())
         self.addStep(RunBuildbotCheckConfigForBuildWebKit())
         self.addStep(RunEWSUnitTests())
         self.addStep(RunBuildbotCheckConfigForEWS())

@@ -39,9 +39,11 @@
 namespace WebCore {
 
 class DOMWindow;
-class FrameView;
+class Event;
+class FloatSize;
 class FrameLoaderClient;
 class FrameLoadRequest;
+class FrameView;
 class HTMLFrameOwnerElement;
 class NavigationScheduler;
 class Page;
@@ -50,10 +52,13 @@ class Settings;
 class WeakPtrImplWithEventTargetData;
 class WindowProxy;
 
+enum class AdjustViewSize : bool;
+
 struct OwnerPermissionsPolicyData;
 
 enum class AdvancedPrivacyProtections : uint16_t;
 enum class AutoplayPolicy : uint8_t;
+enum class ReferrerPolicy : uint8_t;
 enum class SandboxFlag : uint16_t;
 enum class ScrollbarMode : uint8_t;
 
@@ -111,6 +116,7 @@ public:
     virtual void frameDetached() = 0;
     virtual bool preventsParentFromBeingComplete() const = 0;
     virtual void changeLocation(FrameLoadRequest&&) = 0;
+    virtual void loadFrameRequest(FrameLoadRequest&&, Event*) = 0;
     virtual void didFinishLoadInAnotherProcess() = 0;
 
     virtual FrameView* virtualView() const = 0;
@@ -126,6 +132,7 @@ public:
     virtual AutoplayPolicy autoplayPolicy() const = 0;
 
     virtual void updateSandboxFlags(SandboxFlags, NotifyUIProcess);
+    virtual void updateReferrerPolicy(ReferrerPolicy) { }
 
     WEBCORE_EXPORT RenderWidget* ownerRenderer() const; // Renderer for the element that contains this frame.
 
@@ -141,6 +148,9 @@ public:
     virtual bool frameCanCreatePaymentSession() const;
     FrameTreeSyncData& frameTreeSyncData() const { return m_frameTreeSyncData.get(); }
     WEBCORE_EXPORT virtual RefPtr<SecurityOrigin> frameDocumentSecurityOrigin() const = 0;
+
+    WEBCORE_EXPORT virtual void setPrinting(bool printing, FloatSize pageSize, FloatSize originalPageSize, float maximumShrinkRatio, AdjustViewSize, NotifyUIProcess = NotifyUIProcess::Yes);
+    WEBCORE_EXPORT bool isPrinting() const;
 
 protected:
     Frame(Page&, FrameIdentifier, FrameType, HTMLFrameOwnerElement*, Frame* parent, Frame* opener, Ref<FrameTreeSyncData>&&, AddToFrameTree = AddToFrameTree::Yes);
@@ -164,6 +174,7 @@ private:
     WeakPtr<Frame> m_opener;
     WeakHashSet<Frame> m_openedFrames;
     std::unique_ptr<OwnerPermissionsPolicyData> m_ownerPermisssionsPolicyOverride;
+    bool m_isPrinting { false };
 
     Ref<FrameTreeSyncData> m_frameTreeSyncData;
 };

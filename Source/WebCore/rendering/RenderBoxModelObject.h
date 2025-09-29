@@ -44,7 +44,7 @@ enum class ContentChangeType : uint8_t {
     Image,
     HDRImage,
     MaskImage,
-    BackgroundIImage,
+    BackgroundImage,
     Canvas,
     CanvasPixels,
     Video,
@@ -59,6 +59,7 @@ class Image;
 class ImageBuffer;
 class RenderTextFragment;
 class StickyPositionViewportConstraints;
+class StyleImage;
 class TransformationMatrix;
 
 namespace InlineIterator {

@@ -32,6 +32,7 @@
 #include "LocalFrame.h"
 #include "Page.h"
 #include "PaintInfo.h"
+#include "RenderObjectInlines.h"
 #include "RenderStyleInlines.h"
 #include "RenderText.h"
 #include "RenderTheme.h"
@@ -124,7 +125,7 @@ TextPaintStyle computeTextPaintStyle(const RenderText& renderer, const RenderSty
             forceBackgroundToWhite = false;
 
         if (forceBackgroundToWhite) {
-            if (renderer.checkedStyle()->hasAnyBackgroundClipText())
+            if (renderer.checkedStyle()->backgroundLayers().hasAnyBackgroundClipText())
                 paintStyle.fillColor = Color::black;
         }
     }

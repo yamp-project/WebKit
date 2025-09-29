@@ -46,6 +46,7 @@
 #include "PictureInPictureSupport.h"
 #include "RenderImage.h"
 #include "RenderLayerCompositor.h"
+#include "RenderObjectDocument.h"
 #include "RenderVideo.h"
 #include "RenderView.h"
 #include "ScriptController.h"
@@ -63,10 +64,21 @@
 #include "PictureInPictureObserver.h"
 #endif
 
+#if RELEASE_LOG_DISABLED
+#define HTMLVIDEOELEMENT_RELEASE_LOG(formatString, ...)
+#else
 #define HTMLVIDEOELEMENT_RELEASE_LOG(formatString, ...) \
-if (willLog(WTFLogLevel::Always)) { \
-    RELEASE_LOG_FORWARDABLE(Media, HTMLVIDEOELEMENT_##formatString, identifier().toUInt64(), ##__VA_ARGS__); \
-} \
+do { \
+    if (willLog(WTFLogLevel::Always)) { \
+        RELEASE_LOG_FORWARDABLE(Media, HTMLVIDEOELEMENT_##formatString, logIdentifier(), ##__VA_ARGS__); \
+        if (logger().hasEnabledInspector()) { \
+            char buffer[1024] = { 0 }; \
+            SAFE_SPRINTF(std::span { buffer }, MESSAGE_HTMLVIDEOELEMENT_##formatString, logIdentifier(), ##__VA_ARGS__); \
+            logger().toObservers(logChannel(), WTFLogLevel::Always, String::fromUTF8(buffer)); \
+        } \
+    } \
+} while (0)
+#endif
 
 namespace WebCore {
 
@@ -332,8 +344,10 @@ void HTMLVideoElement::mediaPlayerFirstVideoFrameAvailable()
     if (RefPtr player = this->player())
         player->prepareForRendering();
 
-    if (CheckedPtr renderer = this->renderer())
+    if (CheckedPtr renderer = this->renderer()) {
         renderer->updateFromElement();
+        protectedDocument()->didPaintImage(*this, nullptr, renderer->videoBox());
+    }
 }
 
 std::optional<DestinationColorSpace> HTMLVideoElement::colorSpace() const

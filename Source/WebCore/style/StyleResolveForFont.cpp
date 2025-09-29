@@ -46,7 +46,6 @@
 #include "FontCascade.h"
 #include "FontCascadeDescription.h"
 #include "FontSelectionValueInlines.h"
-#include "LengthFunctions.h"
 #include "RenderStyle.h"
 #include "ScriptExecutionContext.h"
 #include "Settings.h"
@@ -159,23 +158,6 @@ FontSelectionValue fontStretchFromCSSValueDeprecated(const CSSValue& value)
         return value.value();
 
     ASSERT(CSSPropertyParserHelpers::isSystemFontShorthand(primitiveValue.valueID()));
-    return normalWidthValue();
-}
-
-FontSelectionValue fontStretchFromCSSValue(BuilderState& builderState, const CSSValue& value)
-{
-    RefPtr primitiveValue = requiredDowncast<CSSPrimitiveValue>(builderState, value);
-    if (!primitiveValue)
-        return { };
-
-    if (primitiveValue->isPercentage())
-        return FontSelectionValue::clampFloat(primitiveValue->resolveAsPercentage<float>(builderState.cssToLengthConversionData()));
-
-    ASSERT(primitiveValue->isValueID());
-    if (auto value = fontWidthValue(primitiveValue->valueID()))
-        return value.value();
-
-    ASSERT(CSSPropertyParserHelpers::isSystemFontShorthand(primitiveValue->valueID()));
     return normalWidthValue();
 }
 
@@ -332,7 +314,7 @@ static ResolvedFontSize fontSizeFromUnresolvedFontSize(const CSSPropertyParserHe
                     return CSS::switchOnUnitType(lengthPercentage.unit,
                         [&](CSS::PercentageUnit) -> ResolvedFontSize {
                             return {
-                                .size = Style::evaluate(Style::Percentage<> { narrowPrecisionToFloat(lengthPercentage.value) }, parentSize),
+                                .size = Style::evaluate<float>(Style::Percentage<> { narrowPrecisionToFloat(lengthPercentage.value) }, parentSize),
                                 .keyword = CSSValueInvalid
                             };
                         },
@@ -361,7 +343,7 @@ static ResolvedFontSize fontSizeFromUnresolvedFontSize(const CSSPropertyParserHe
                         return { .size = 0.0f, .keyword = CSSValueInvalid };
 
                     return {
-                        .size = Style::evaluate(Style::toStyleNoConversionDataRequired(calc), parentSize),
+                        .size = Style::evaluate<float>(Style::toStyleNoConversionDataRequired(calc), parentSize, Style::ZoomNeeded { }),
                         .keyword = CSSValueInvalid
                     };
                 }

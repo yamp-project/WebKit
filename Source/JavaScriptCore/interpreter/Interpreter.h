@@ -70,6 +70,7 @@ using JSOrWasmInstruction = Variant<const JSInstruction*, uintptr_t /* IPIntOffs
     class ProgramExecutable;
     class ModuleProgramExecutable;
     class Register;
+    class JSGenerator;
     class JSObject;
     class JSScope;
     class SourceCode;
@@ -156,6 +157,7 @@ using JSOrWasmInstruction = Variant<const JSInstruction*, uintptr_t /* IPIntOffs
         static JSValue checkVMEntryPermission();
 
     private:
+        void getAsyncStackTrace(JSCell* owner, Vector<StackFrame>& results, JSGenerator* initialGenerator, size_t maxStackSize);
         enum ExecutionFlag { Normal, InitializeAndReturn };
         
         CodeBlock* prepareForCachedCall(CachedCall&, JSFunction*);
@@ -165,7 +167,7 @@ using JSOrWasmInstruction = Variant<const JSInstruction*, uintptr_t /* IPIntOffs
         JSValue executeCallImpl(VM&, JSObject*, const CallData&, JSValue, const ArgList&);
 
 #if CPU(ARM64) && CPU(ADDRESS64) && !ENABLE(C_LOOP)
-        template<typename... Args>
+        template<typename... Args> requires (std::is_convertible_v<Args, JSValue> && ...)
         JSValue tryCallWithArguments(CachedCall&, JSValue, Args...);
 #endif
 

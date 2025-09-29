@@ -29,6 +29,7 @@
 
 #include <JavaScriptCore/WasmBranchHints.h>
 #include <JavaScriptCore/WasmFormat.h>
+#include <JavaScriptCore/WasmModuleDebugInfo.h>
 
 #include <wtf/FixedBitVector.h>
 #include <wtf/HashMap.h>
@@ -198,7 +199,7 @@ struct ModuleInformation final : public ThreadSafeRefCounted<ModuleInformation> 
 
     Vector<Export> exports;
     std::optional<uint32_t> startFunctionIndexSpace;
-    Vector<Segment::Ptr> data;
+    Vector<std::unique_ptr<Segment>> data;
     Vector<Element> elements;
     Vector<TableInformation> tables;
     Vector<GlobalInformation> globals;
@@ -211,6 +212,7 @@ struct ModuleInformation final : public ThreadSafeRefCounted<ModuleInformation> 
     Vector<Ref<const RTT>> rtts;
     Vector<Vector<uint8_t>> constantExpressions;
     Name sourceMappingURL;
+    std::unique_ptr<Wasm::ModuleDebugInfo> debugInfo;
 
     BitVector m_declaredFunctions;
     BitVector m_declaredExceptions;

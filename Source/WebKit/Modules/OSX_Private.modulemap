@@ -104,11 +104,6 @@ framework module WebKit_Private [system] {
     export *
   }
 
-  explicit module WKApplicationCacheManager {
-    header "WKApplicationCacheManager.h"
-    export *
-  }
-
   explicit module WKArray {
     header "WKArray.h"
     export *
@@ -346,6 +341,11 @@ framework module WebKit_Private [system] {
 
   explicit module WKBundleScriptWorld {
     header "WKBundleScriptWorld.h"
+    export *
+  }
+
+  explicit module WKCast {
+    header "WKCast.h"
     export *
   }
 
@@ -1881,6 +1881,16 @@ framework module WebKit_Private [system] {
 
   explicit module _WKNSFileManagerExtras {
     header "_WKNSFileManagerExtras.h"
+    export *
+  }
+
+  explicit module _WKNSStringExtras {
+    header "_WKNSStringExtras.h"
+    export *
+  }
+
+  explicit module _WKNSURLExtras {
+    header "_WKNSURLExtras.h"
     export *
   }
 

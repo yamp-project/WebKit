@@ -38,6 +38,11 @@
 #import <WebKit/WKPreferencesPrivate.h>
 #import <WebKit/WKWebsiteDataStorePrivate.h>
 #import <WebKit/_WKInternalDebugFeature.h>
+#import <wtf/SoftLinking.h>
+
+// FIXME: Replace this soft linking with a HAVE macro once rdar://158191390 is available on all tested OS builds.
+SOFT_LINK_FRAMEWORK(Network)
+SOFT_LINK_MAY_FAIL(Network, nw_webtransport_options_set_allow_joining_before_ready, void, (nw_protocol_options_t options, bool allow), (options, allow))
 
 namespace TestWebKitAPI {
 
@@ -61,12 +66,7 @@ static void validateChallenge(NSURLAuthenticationChallenge *challenge, uint16_t 
     verifyCertificateAndPublicKey(challenge.protectionSpace.serverTrust);
 }
 
-// FIXME: Re-enable these tests once rdar://148050136 is fixed.
-#if PLATFORM(MAC)
 TEST(WebTransport, ClientBidirectional)
-#else
-TEST(WebTransport, DISABLED_ClientBidirectional)
-#endif
 {
     WebTransportServer echoServer([](ConnectionGroup group) -> ConnectionTask {
         auto connection = co_await group.receiveIncomingConnection();
@@ -110,12 +110,7 @@ TEST(WebTransport, DISABLED_ClientBidirectional)
     EXPECT_TRUE(challenged);
 }
 
-// FIXME: Re-enable these tests once rdar://148050136 is fixed.
-#if PLATFORM(MAC)
 TEST(WebTransport, Datagram)
-#else
-TEST(WebTransport, DISABLED_Datagram)
-#endif
 {
     WebTransportServer echoServer([](ConnectionGroup group) -> ConnectionTask {
         auto datagramConnection = group.createWebTransportConnection(ConnectionGroup::ConnectionType::Datagram);
@@ -165,12 +160,7 @@ TEST(WebTransport, DISABLED_Datagram)
     EXPECT_TRUE(challenged);
 }
 
-// FIXME: Re-enable these tests once rdar://148050136 is fixed.
-#if PLATFORM(MAC)
 TEST(WebTransport, Unidirectional)
-#else
-TEST(WebTransport, DISABLED_Unidirectional)
-#endif
 {
     WebTransportServer echoServer([](ConnectionGroup group) -> ConnectionTask {
         auto connection = co_await group.receiveIncomingConnection();
@@ -217,8 +207,7 @@ TEST(WebTransport, DISABLED_Unidirectional)
     EXPECT_TRUE(challenged);
 }
 
-// FIXME: Fix and enable this test.
-TEST(WebTransport, DISABLED_ServerBidirectional)
+TEST(WebTransport, ServerBidirectional)
 {
     WebTransportServer echoServer([](ConnectionGroup group) -> ConnectionTask {
         auto connection = co_await group.receiveIncomingConnection();
@@ -267,12 +256,7 @@ TEST(WebTransport, DISABLED_ServerBidirectional)
     EXPECT_TRUE(challenged);
 }
 
-// FIXME: Re-enable these tests once rdar://148050136 is fixed.
-#if PLATFORM(MAC)
 TEST(WebTransport, NetworkProcessCrash)
-#else
-TEST(WebTransport, DISABLED_NetworkProcessCrash)
-#endif
 {
     WebTransportServer echoServer([](ConnectionGroup group) -> ConnectionTask {
         auto datagramConnection = group.createWebTransportConnection(ConnectionGroup::ConnectionType::Datagram);
@@ -444,12 +428,54 @@ TEST(WebTransport, DISABLED_NetworkProcessCrash)
     EXPECT_EQ(obj, nil);
 }
 
-// FIXME: Re-enable these tests once rdar://148050136 is fixed.
-#if PLATFORM(MAC)
 TEST(WebTransport, Worker)
-#else
-TEST(WebTransport, DISABLED_Worker)
-#endif
+{
+    WebTransportServer transportServer([](ConnectionGroup group) -> ConnectionTask {
+        auto connection = co_await group.receiveIncomingConnection();
+        auto request = co_await connection.awaitableReceiveBytes();
+        auto serverBidirectionalStream = group.createWebTransportConnection(ConnectionGroup::ConnectionType::Bidirectional);
+        co_await serverBidirectionalStream.awaitableSend(WTFMove(request));
+    });
+
+    auto mainHTML = "<script>"
+    "const worker = new Worker('worker.js');"
+    "worker.onmessage = (event) => {"
+    "  alert('message from worker: ' + event.data);"
+    "};"
+    "</script>"_s;
+
+    NSString *workerJS = [NSString stringWithFormat:@""
+        "async function test() {"
+        "  try {"
+        "    let t = new WebTransport('https://127.0.0.1:%d/');"
+        "    %s"
+        "    let c = await t.createBidirectionalStream();"
+        "    let w = c.writable.getWriter();"
+        "    await w.write(new TextEncoder().encode('abc'));"
+        "    let sr = t.incomingBidirectionalStreams.getReader();"
+        "    let {value: s, d} = await sr.read();"
+        "    let r = s.readable.getReader();"
+        "    const { value, done } = await r.read();"
+        "    self.postMessage('successfully read ' + new TextDecoder().decode(value));"
+        "  } catch (e) { self.postMessage('caught ' + e); }"
+        "}; test();", transportServer.port(), canLoadnw_webtransport_options_set_allow_joining_before_ready() ? "" : "await t.ready;"];
+
+    HTTPServer loadingServer({
+        { "/"_s, { mainHTML } },
+        { "/worker.js"_s, { { { "Content-Type"_s, "text/javascript"_s } }, workerJS } }
+    });
+
+    RetainPtr configuration = adoptNS([WKWebViewConfiguration new]);
+    enableWebTransport(configuration.get());
+    RetainPtr webView = adoptNS([[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration.get()]);
+    auto delegate = adoptNS([TestNavigationDelegate new]);
+    [delegate allowAnyTLSCertificate];
+    [webView setNavigationDelegate:delegate.get()];
+    [webView loadRequest:loadingServer.request()];
+    EXPECT_WK_STREQ([webView _test_waitForAlert], "message from worker: successfully read abc");
+}
+
+TEST(WebTransport, WorkerAfterNetworkProcessCrash)
 {
     WebTransportServer transportServer([](ConnectionGroup group) -> ConnectionTask {
         auto connection = co_await group.receiveIncomingConnection();
@@ -479,7 +505,8 @@ TEST(WebTransport, DISABLED_Worker)
         "    const { value, done } = await r.read();"
         "    self.postMessage('successfully read ' + new TextDecoder().decode(value));"
         "  } catch (e) { self.postMessage('caught ' + e); }"
-        "}; test();", transportServer.port()];
+        "};"
+        "addEventListener('message', test);", transportServer.port()];
 
     HTTPServer loadingServer({
         { "/"_s, { mainHTML } },
@@ -493,7 +520,66 @@ TEST(WebTransport, DISABLED_Worker)
     [delegate allowAnyTLSCertificate];
     [webView setNavigationDelegate:delegate.get()];
     [webView loadRequest:loadingServer.request()];
+    [delegate waitForDidFinishNavigation];
+    kill([configuration.get().websiteDataStore _networkProcessIdentifier], SIGKILL);
+    [webView evaluateJavaScript:@"worker.postMessage('start')" completionHandler:nil];
     EXPECT_WK_STREQ([webView _test_waitForAlert], "message from worker: successfully read abc");
+}
+
+TEST(WebTransport, CreateStreamsBeforeReady)
+{
+    if (!canLoadnw_webtransport_options_set_allow_joining_before_ready())
+        return;
+
+    WebTransportServer datagramServer([](ConnectionGroup group) -> ConnectionTask {
+        auto datagramConnection = group.createWebTransportConnection(ConnectionGroup::ConnectionType::Datagram);
+        auto request = co_await datagramConnection.awaitableReceiveBytes();
+        co_await datagramConnection.awaitableSend(WTFMove(request));
+    });
+
+    WebTransportServer streamServer([](ConnectionGroup group) -> ConnectionTask {
+        auto connection = co_await group.receiveIncomingConnection();
+        auto request = co_await connection.awaitableReceiveBytes();
+        co_await connection.awaitableSend(WTFMove(request));
+    });
+
+    RetainPtr configuration = adoptNS([WKWebViewConfiguration new]);
+    enableWebTransport(configuration.get());
+    RetainPtr webView = adoptNS([[WKWebView alloc] initWithFrame:CGRectZero configuration:configuration.get()]);
+    auto delegate = adoptNS([TestNavigationDelegate new]);
+    [delegate allowAnyTLSCertificate];
+    [webView setNavigationDelegate:delegate.get()];
+
+    NSString *datagramHTML = [NSString stringWithFormat:@"<script>"
+    "async function test() {"
+    "  try {"
+    "    const w = new WebTransport('https://127.0.0.1:%d/');"
+    "    const writer = w.datagrams.writable.getWriter();"
+    "    const reader = w.datagrams.readable.getReader();"
+    "    await writer.write(new TextEncoder().encode('abc'));"
+    "    const { value, done } = await reader.read();"
+    "    alert('successfully read ' + new TextDecoder().decode(value));"
+    "  } catch (e) { alert('caught ' + e); }"
+    "}; test()"
+    "</script>", datagramServer.port()];
+    [webView loadHTMLString:datagramHTML baseURL:[NSURL URLWithString:@"https://webkit.org/"]];
+    EXPECT_WK_STREQ([webView _test_waitForAlert], "successfully read abc");
+
+    NSString *streamHTML = [NSString stringWithFormat:@"<script>"
+    "async function test() {"
+    "  try {"
+    "    const w = new WebTransport('https://127.0.0.1:%d/');"
+    "    let c = await w.createBidirectionalStream();"
+    "    let writer = c.writable.getWriter();"
+    "    await writer.write(new TextEncoder().encode('abc'));"
+    "    let reader = await c.readable.getReader();"
+    "    const { value, done } = await reader.read();"
+    "    alert('successfully read ' + new TextDecoder().decode(value));"
+    "  } catch (e) { alert('caught ' + e); }"
+    "}; test()"
+    "</script>", streamServer.port()];
+    [webView loadHTMLString:streamHTML baseURL:[NSURL URLWithString:@"https://webkit.org/"]];
+    EXPECT_WK_STREQ([webView _test_waitForAlert], "successfully read abc");
 }
 
 } // namespace TestWebKitAPI

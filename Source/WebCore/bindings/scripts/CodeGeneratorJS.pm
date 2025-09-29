@@ -724,6 +724,9 @@ sub AddToIncludes
 {
     my ($header, $includesRef, $conditional) = @_;
 
+    # Unquote string literals if needed.
+    $conditional = $codeGenerator->UnquoteStringLiteral($conditional) if $conditional && $conditional =~ /^['"]/;
+
     if (not $conditional) {
         $includesRef->{$header} = 1;
     } elsif (not exists($includesRef->{$header})) {
@@ -2121,6 +2124,66 @@ sub IsAlwaysExposedOnInterface
     return 1;
 }
 
+sub IsPrivateHeader
+{
+    my $headerFileName = shift;
+
+    # The set of DerivedSources headers that have private visibility.
+    # All private headers can only include other private headers or public headers.
+    # All private and public headers must be referenced using angle bracket includes.
+    # Always prefer using project visibility (instead of private) whenever possible.
+    my %privateHeaders = (
+    'JSAbstractRange.h' => 1,
+    'JSBlob.h' => 1,
+    'JSCompositeOperation.h' => 1,
+    'JSCompositeOperationOrAuto.h' => 1,
+    'JSComputedEffectTiming.h' => 1,
+    'JSCSSRule.h' => 1,
+    'JSCSSRuleList.h' => 1,
+    'JSCSSStyleDeclaration.h' => 1,
+    'JSDeprecatedCSSOMCounter.h' => 1,
+    'JSDeprecatedCSSOMRect.h' => 1,
+    'JSDeprecatedCSSOMRGBColor.h' => 1,
+    'JSDeprecatedCSSOMValue.h' => 1,
+    'JSDeprecatedCSSOMValueList.h' => 1,
+    'JSDocument.h' => 1,
+    'JSDOMImplementation.h' => 1,
+    'JSDOMWindow.h' => 1,
+    'JSEffectTiming.h' => 1,
+    'JSElement.h' => 1,
+    'JSEvent.h' => 1,
+    'JSEventTarget.h' => 1,
+    'JSFile.h' => 1,
+    'JSHTMLCollection.h' => 1,
+    'JSHTMLElement.h' => 1,
+    'JSHTMLOptionsCollection.h' => 1,
+    'JSIterationCompositeOperation.h' => 1,
+    'JSKeyframeEffectOptions.h' => 1,
+    'JSMediaList.h' => 1,
+    'JSNamedNodeMap.h' => 1,
+    'JSNode.h' => 1,
+    'JSNodeIterator.h' => 1,
+    'JSNodeList.h' => 1,
+    'JSNotification.h' => 1,
+    'JSOptionalEffectTiming.h' => 1,
+    'JSRange.h' => 1,
+    'JSStyleSheet.h' => 1,
+    'JSStyleSheetList.h' => 1,
+    'JSTreeWalker.h' => 1,
+    'JSWebKitJSHandle.h' => 1,
+    'JSWebKitSerializedNode.h' => 1,
+    'JSXPathExpression.h' => 1,
+    'JSXPathResult.h' => 1,
+    );
+
+    # Remove quotes and angle brackets if needed.
+    my $sanitizedHeader = $headerFileName;
+    $sanitizedHeader =~ s/^["<]//;
+    $sanitizedHeader =~ s/[">]$//;
+
+    return exists $privateHeaders{$sanitizedHeader};
+}
+
 sub NeedsRuntimeCheck
 {
     my ($interface, $context) = @_;
@@ -2131,6 +2194,7 @@ sub NeedsRuntimeCheck
 
     return $context->extendedAttributes->{EnabledByDeprecatedGlobalSetting}
         || $context->extendedAttributes->{EnabledForContext}
+        || $context->extendedAttributes->{EnabledForGlobalObject}
         || $context->extendedAttributes->{EnabledForWorld}
         || $context->extendedAttributes->{EnabledBySetting}
         || $context->extendedAttributes->{EnabledByQuirk}
@@ -3051,7 +3115,7 @@ sub GenerateHeader
     if ($hasParent) {
         $headerIncludes{"$parentClassName.h"} = 1;
     } else {
-        $headerIncludes{"JSDOMWrapper.h"} = 1;
+        $headerIncludes{"<WebCore/JSDOMWrapper.h>"} = 1;
         if ($interface->extendedAttributes->{Exception}) {
             $headerIncludes{"<JavaScriptCore/ErrorPrototype.h>"} = 1;
         }
@@ -3080,7 +3144,7 @@ sub GenerateHeader
     }
 
     $headerIncludes{"JSWindowProxy.h"} = 1 if $interfaceName eq "DOMWindow";
-    $headerIncludes{"EventTargetInlines.h"} = 1 if $parentClassName eq "JSEventTarget";
+    $headerIncludes{"EventTarget.h"} = 1 if $parentClassName eq "JSEventTarget";
 
     my $exportMacro = GetExportMacroForJSClass($interface);
 
@@ -3545,7 +3609,7 @@ sub GenerateHeader
     }
 
     if (NeedsImplementationClass($interface)) {
-        $headerIncludes{"JSDOMWrapper.h"} = 1;
+        $headerIncludes{"<WebCore/JSDOMWrapper.h>"} = 1;
 
         push(@headerContent, "template<> struct JSDOMWrapperConverterTraits<${implType}> {\n");
         push(@headerContent, "    using WrapperClass = ${className};\n");
@@ -4315,6 +4379,14 @@ sub GenerateRuntimeEnableConditionalString
         AddToImplIncludes("DOMWrapperWorld.h");
 
         push(@conjuncts, "worldForDOMObject(*this)." . ToMethodName($context->extendedAttributes->{EnabledForWorld}) . "()");
+    }
+
+    if ($context->extendedAttributes->{EnabledForGlobalObject}) {
+        assert("Must specify value for EnabledForGlobalObject.") if $context->extendedAttributes->{EnabledForGlobalObject} eq "VALUE_IS_MISSING";
+
+        AddToImplIncludes("DOMWrapperWorld.h");
+
+        push(@conjuncts, "jsCast<JSDOMGlobalObject*>(this->globalObject())->" . ToMethodName($context->extendedAttributes->{EnabledForGlobalObject}) . "()");
     }
 
     if ($context->extendedAttributes->{EnabledBySetting}) {
@@ -5169,7 +5241,7 @@ sub GenerateImplementation
     if (!$hasParent) {
         push(@implContent, "void ${className}::destroy(JSC::JSCell* cell)\n");
         push(@implContent, "{\n");
-        push(@implContent, "    ${className}* thisObject = static_cast<${className}*>(cell);\n");
+        push(@implContent, "    SUPPRESS_MEMORY_UNSAFE_CAST ${className}* thisObject = static_cast<${className}*>(cell);\n");
         push(@implContent, "    thisObject->${className}::~${className}();\n");
         push(@implContent, "}\n\n");
     }
@@ -5452,7 +5524,7 @@ sub GenerateImplementation
     if (ShouldGenerateWrapperOwnerCode($hasParent, $interface) && !$interface->extendedAttributes->{JSCustomFinalize}) {
         push(@implContent, "void JS${interfaceName}Owner::finalize(JSC::Handle<JSC::Unknown> handle, void* context)\n");
         push(@implContent, "{\n");
-        push(@implContent, "    auto* js${interfaceName} = static_cast<JS${interfaceName}*>(handle.slot()->asCell());\n");
+        push(@implContent, "    SUPPRESS_MEMORY_UNSAFE_CAST auto* js${interfaceName} = static_cast<JS${interfaceName}*>(handle.slot()->asCell());\n");
         push(@implContent, "    auto& world = *static_cast<DOMWrapperWorld*>(context);\n");
         push(@implContent, "    uncacheWrapper(world, js${interfaceName}->protectedWrapped().ptr(), js${interfaceName});\n");
         push(@implContent, "}\n\n");
@@ -5628,7 +5700,7 @@ sub GenerateAttributeGetterBodyDefinition
         $implIncludes{"EventNames.h"} = 1;
         my $getter = $attribute->extendedAttributes->{WindowEventHandler} ? "windowEventHandlerAttribute" : "eventHandlerAttribute";
         my $eventName = EventHandlerAttributeEventName($attribute);
-        push(@$outputArray, "    return $getter(thisObject.protectedWrapped(), $eventName, worldForDOMObject(thisObject));\n");
+        push(@$outputArray, "    return $getter(thisObject.protectedWrapped(), $eventName, protectedWorldForDOMObject(thisObject));\n");
     } elsif ($isConstructor) {
         # FIXME: This should be switched to using an extended attribute rather than infering this information from name.
         my $constructorType = $attribute->type->name;
@@ -5951,7 +6023,7 @@ sub GenerateAttributeSetterBodyDefinition
         my $callTracer = $attribute->extendedAttributes->{CallTracer} || $interface->extendedAttributes->{CallTracer};
         if ($callTracer) {
             my $indent = "    ";
-            my @callTracerArguments = $readValue;
+            my @callTracerArguments = ( [GetIDLType($interface, $attribute->type), $readValue] );
             GenerateCallTracer($outputArray, $callTracer, $attribute->name, \@callTracerArguments, $indent);
         }
 
@@ -6419,7 +6491,7 @@ sub GenerateCallWith
     }
     # Script execution context of current realm (https://html.spec.whatwg.org/multipage/webappapis.html#concept-current-everything)
     if ($codeGenerator->ExtendedAttributeContains($callWith, "CurrentScriptExecutionContext")) {
-        push(@$outputArray, $indent . "auto* context = ${scriptExecutionContextAccessor}->scriptExecutionContext();\n");
+        push(@$outputArray, $indent . "RefPtr context = ${scriptExecutionContextAccessor}->scriptExecutionContext();\n");
         push(@$outputArray, $indent . "if (!context) [[unlikely]]\n");
         push(@$outputArray, $indent . "    return" . ($contextMissing ? " " . $contextMissing : "") . ";\n");
         push(@callWithArgs, "*context");
@@ -6808,7 +6880,7 @@ sub GenerateCallbackHeaderContent
         if ($generateIsReachable ne "ImplScriptExecutionContext") {
             assert("\"ImplScriptExecutionContext\" is the only valid value for \"GenerateIsReachable\" for callbacks.");
         }
-        $includesRef->{"WebCoreOpaqueRootInlines.h"} = 1;
+        $includesRef->{"WebCoreOpaqueRoot.h"} = 1;
     }
 
     my $name = $interfaceOrCallback->type->name;
@@ -7175,7 +7247,7 @@ sub GenerateImplementationFunctionCall
 
     my $callTracer = $operation->extendedAttributes->{CallTracer} || $interface->extendedAttributes->{CallTracer};
     if ($callTracer) {
-        my @callTracerArguments = map { $_->name . "ConversionResult.returnValue()" } @{$operation->arguments};
+        my @callTracerArguments = map { [GetIDLTypeForArgument($interface, $_), $_->name . "ConversionResult.returnValue()"] } @{$operation->arguments};
         GenerateCallTracer($outputArray, $callTracer, $operation->name, \@callTracerArguments, $indent);
     }
 
@@ -7561,6 +7633,18 @@ sub GetIDLType
     my $baseIDLType = GetIDLTypeExcludingNullability($interface, $type);
     $baseIDLType = "IDLNullable<" . $baseIDLType . ">" if $type->isNullable;
     return $baseIDLType;
+}
+
+sub GetIDLTypeForArgument
+{
+    my ($interface, $argument) = @_;
+
+    my $defaultValueFunctor = GetArgumentDefaultValueFunctor($interface, $argument);
+    my $optional = $argument->isOptional && ((defined($argument->default) && !WillConvertUndefinedToDefaultParameterValue($argument->type, $argument->default))|| !defined($argument->default));
+
+    my $IDLType = GetIDLType($interface, $argument->type);
+    $IDLType = "IDLOptional<" . $IDLType . ">" if $optional && !$defaultValueFunctor;
+    return $IDLType;
 }
 
 sub ShouldPassArgumentByReference
@@ -8070,6 +8154,11 @@ sub WriteData
             push @{$implIncludeConditions{$codeGenerator->GenerateConditionalStringFromAttributeValue($condition)}}, $include;
         }
     }
+
+    if ($name eq "AddEventListenerOptions" or $name eq "EventTarget") {
+        push @includes, "\"AddEventListenerOptionsInlines.h\"";
+    }
+
     foreach my $include (sort @includes) {
         $contents .= "#include $include\n";
     }
@@ -8093,7 +8182,12 @@ sub WriteData
 
     @includes = ();
     foreach my $include (keys %headerIncludes) {
-        $include = "\"$include\"" unless $include =~ /^["<]/; # "
+        if (IsPrivateHeader("JS$name.h")) {
+           $include = "<WebCore/$include>" unless $include =~ /^["<]/; # "
+        } else {
+           $include = "\"$include\"" unless $include =~ /^["<]/; # "
+        }
+
         $include = SubstituteHeader($include);
         push @includes, $include;
     }
@@ -8107,7 +8201,12 @@ sub WriteData
 
     @includes = ();
     foreach my $include (keys %headerTrailingIncludes) {
-        $include = "\"$include\"" unless $include =~ /^["<]/; # "
+        if (IsPrivateHeader("JS$name.h")) {
+           $include = "<WebCore/$include>" unless $include =~ /^["<]/; # "
+        } else {
+           $include = "\"$include\"" unless $include =~ /^["<]/; # "
+        }
+
         push @includes, $include;
     }
     foreach my $include (sort @includes) {
@@ -8667,7 +8766,7 @@ sub GenerateCallTracer()
     push(@$outputArray, $indent . "if (impl.hasActive" . $callTracer . "()) [[unlikely]]\n");
     push(@$outputArray, $indent . "    " . $callTracer . "::recordAction(impl, \"" . $name . "\"_s");
     if (scalar(@$arguments)) {
-        push(@$outputArray, ", { " . join(", ", map { $callTracer . "::processArgument(impl, " . $_ . ")" } @$arguments) . " }");
+        push(@$outputArray, ", { " . join(", ", map { $callTracer . "::processArgument<". @$_[0] . ">(impl, " . @$_[1] . ")" } @$arguments) . " }");
     }
     push(@$outputArray, ");\n");
 }

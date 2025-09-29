@@ -213,6 +213,11 @@ void TestController::platformDestroy()
     CFNotificationCenterRemoveObserver(center, this, (CFStringRef)UIMenuControllerWillHideMenuNotification, nullptr);
     CFNotificationCenterRemoveObserver(center, this, (CFStringRef)UIMenuControllerDidHideMenuNotification, nullptr);
     ALLOW_DEPRECATED_DECLARATIONS_END
+
+#if !ENABLE(DNS_SERVER_FOR_TESTING_IN_NETWORKING_PROCESS)
+    if (auto resolverConfig = m_resolverConfig)
+        nw_resolver_config_unpublish(resolverConfig.get());
+#endif
 }
 
 void TestController::initializeInjectedBundlePath()
@@ -322,7 +327,7 @@ bool TestController::platformResetStateToConsistentValues(const TestOptions& opt
     restorePortraitOrientationIfNeeded();
 
     // Ensures that only the UCB is on-screen when showing the keyboard, if the hardware keyboard is attached.
-    TIPreferencesController *textInputPreferences = [getTIPreferencesControllerClass() sharedPreferencesController];
+    TIPreferencesController *textInputPreferences = [getTIPreferencesControllerClassSingleton() sharedPreferencesController];
     if (!textInputPreferences.automaticMinimizationEnabled)
         textInputPreferences.automaticMinimizationEnabled = YES;
 

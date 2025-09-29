@@ -32,34 +32,28 @@
 #include "HeapVerifier.h"
 #include "JSWebAssemblyArray.h"
 #include "JSWebAssemblyStruct.h"
+#include "WasmCallee.h"
 #include <wtf/CheckedArithmetic.h>
 #include <wtf/FastMalloc.h>
 #include <wtf/text/MakeString.h>
 
 namespace JSC { namespace Wasm {
 
-constexpr CalleeBits NullWasmCallee = CalleeBits::nullCallee();
 
-Segment::Ptr Segment::create(std::optional<I32InitExpr> offset, uint32_t sizeInBytes, Kind kind)
+bool WasmCallableFunction::isJS() const
 {
-    CheckedUint32 totalBytesChecked = sizeInBytes;
-    totalBytesChecked += sizeof(Segment);
-    if (totalBytesChecked.hasOverflowed())
-        return Ptr(nullptr, &Segment::destroy);
-    auto allocated = tryFastCalloc(totalBytesChecked, 1);
-    Segment* segment;
-    if (!allocated.getValue(segment))
-        return Ptr(nullptr, &Segment::destroy);
-    ASSERT(kind == Kind::Passive || !!offset);
-    segment->kind = kind;
-    segment->offsetIfActive = WTFMove(offset);
-    segment->sizeInBytes = sizeInBytes;
-    return Ptr(segment, &Segment::destroy);
+    return boxedCallee == CalleeBits { &WasmToJSCallee::singleton() };
 }
 
-void Segment::destroy(Segment *segment)
+std::unique_ptr<Segment> Segment::tryCreate(std::optional<I32InitExpr> offset, uint32_t sizeInBytes, Kind kind)
 {
-    fastFree(segment);
+    auto result = tryFastZeroedMalloc(allocationSize(sizeInBytes));
+    void* memory;
+    if (!result.getValue(memory))
+        return nullptr;
+
+    ASSERT(kind == Kind::Passive || !!offset);
+    return std::unique_ptr<Segment>(new (memory) Segment(sizeInBytes, kind, WTFMove(offset)));
 }
 
 String makeString(const Name& characters)

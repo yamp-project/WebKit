@@ -75,6 +75,7 @@
 #include <JavaScriptCore/InspectorAgent.h>
 #include <JavaScriptCore/InspectorBackendDispatcher.h>
 #include <JavaScriptCore/InspectorBackendDispatchers.h>
+#include <JavaScriptCore/InspectorFrontendChannel.h>
 #include <JavaScriptCore/InspectorFrontendDispatchers.h>
 #include <JavaScriptCore/InspectorFrontendRouter.h>
 #include <JavaScriptCore/InspectorScriptProfilerAgent.h>
@@ -413,6 +414,11 @@ bool InspectorController::enabled() const
 Page& InspectorController::inspectedPage() const
 {
     return m_page;
+}
+
+Ref<Page> InspectorController::protectedInspectedPage() const
+{
+    return inspectedPage();
 }
 
 void InspectorController::dispatchMessageFromFrontend(const String& message)

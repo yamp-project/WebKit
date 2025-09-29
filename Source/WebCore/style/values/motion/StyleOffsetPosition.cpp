@@ -28,7 +28,9 @@
 #include "CSSPositionValue.h"
 #include "RenderStyleInlines.h"
 #include "StyleBuilderChecking.h"
+#include "StyleLengthWrapper+Blending.h"
 #include "StylePrimitiveNumericTypes+Blending.h"
+#include "StylePrimitiveNumericTypes+Logging.h"
 #include <wtf/text/TextStream.h>
 
 namespace WebCore {
@@ -53,13 +55,13 @@ auto CSSValueConversion<OffsetPosition>::operator()(BuilderState& state, const C
 
 auto Blending<OffsetPosition>::canBlend(const OffsetPosition& a, const OffsetPosition& b) -> bool
 {
-    return WTF::holdsAlternative<Position>(a) && WTF::holdsAlternative<Position>(b);
+    return a.isPosition() && b.isPosition();
 }
 
 auto Blending<OffsetPosition>::requiresInterpolationForAccumulativeIteration(const OffsetPosition& a, const OffsetPosition& b) -> bool
 {
     ASSERT(canBlend(a, b));
-    return Style::requiresInterpolationForAccumulativeIteration(Position { a.value }, Position { b.value });
+    return Style::requiresInterpolationForAccumulativeIteration(*a.tryPosition(), *b.tryPosition());
 }
 
 auto Blending<OffsetPosition>::blend(const OffsetPosition& a, const OffsetPosition& b, const BlendingContext& context) -> OffsetPosition
@@ -70,14 +72,24 @@ auto Blending<OffsetPosition>::blend(const OffsetPosition& a, const OffsetPositi
     }
 
     ASSERT(canBlend(a, b));
-    return OffsetPosition { Style::blend(Position { a.value }, Position { b.value }, context) };
+    return OffsetPosition { Style::blend(*a.tryPosition(), *b.tryPosition(), context) };
 }
 
 // MARK: - Platform
 
 auto ToPlatform<OffsetPosition>::operator()(const OffsetPosition& value) -> WebCore::LengthPoint
 {
-    return value.value;
+    return WTF::switchOn(value,
+        [](const CSS::Keyword::Auto&) {
+            return WebCore::LengthPoint { WebCore::LengthType::Auto, WebCore::LengthType::Auto };
+        },
+        [](const CSS::Keyword::Normal&) {
+            return WebCore::LengthPoint { WebCore::LengthType::Normal, WebCore::LengthType::Normal };
+        },
+        [](const Position& position) {
+            return toPlatform(position);
+        }
+    );
 }
 
 } // namespace Style
